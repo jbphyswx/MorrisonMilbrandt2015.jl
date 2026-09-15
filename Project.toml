@@ -1,0 +1,28 @@
+name = "MorrisonMilbrandt2015"
+uuid = "0bcb266f-8634-4996-8200-4395c3986644"
+authors = ["Jordan Benjamin"]
+version = "0.1.0"
+
+[workspace]
+projects = ["test", "docs", "benchmark"]
+
+
+[deps]
+
+[weakdeps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
+RootSolvers = "7181ea78-2dcb-4de3-ab41-2b8ab5a31e74"
+
+[extensions]
+MorrisonMilbrandt2015CairoMakieExt = ["CairoMakie"]
+MorrisonMilbrandt2015RootSolversExt = ["RootSolvers"]
+MorrisonMilbrandt2015ThermodynamicsExt = ["Thermodynamics"]
+
+[compat]
+CairoMakie = "0.15"
+RootSolvers = "1"
+Thermodynamics = "1"
+julia = "1.10"
+
+[sources]

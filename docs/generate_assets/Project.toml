@@ -1,0 +1,6 @@
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+MorrisonMilbrandt2015 = "0bcb266f-8634-4996-8200-4395c3986644"
+
+[sources]
+MorrisonMilbrandt2015 = {path = "../.."}

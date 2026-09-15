@@ -1,0 +1,11 @@
+[deps]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+ClimaParams = "5c42b081-d73a-476f-9059-fd94b934656c"
+ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
+MorrisonMilbrandt2015 = "0bcb266f-8634-4996-8200-4395c3986644"
+RootSolvers = "7181ea78-2dcb-4de3-ab41-2b8ab5a31e74"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
+
+[sources]
+MorrisonMilbrandt2015 = {path = ".."}
