@@ -38,6 +38,12 @@ arithmetic.
   where the root is ill-conditioned, with a residual within ``64\varepsilon`` of the size of the
   terms (the largest measured error is ``3.1\varepsilon``); and the Lambert ``W`` functions at their
   piece boundaries.
+- [`Coefficients`](@ref) built from host thermodynamics through [`ThermodynamicInputs`](@ref) equal
+  those of the backend on every test state, in both moisture bases. In `Float32`, the ice rate from a
+  small ``\delta_i`` given with the coefficients stays within ``64\varepsilon`` of a 256-bit value.
+- [`Thresholds`](@ref): condensate below `x_min` returns to the vapor without an exhaustion event,
+  and supersaturations below `δ_min` and `δ_i_min` are set to zero. A parcel without condensate that
+  stays subsaturated has zero rates in a single segment.
 - Invariants on every test state and scheme: no phase loses more mass than it holds, a phase
   without mass never loses mass, and ice does not grow above the triple point in a step that does
   not cross it.
@@ -57,7 +63,7 @@ scheme from the reference.
 Left: relative error of the mean rates against the reference for the state between ice and liquid
 saturation of the [Gallery](gallery.md), for steps from 1 s to an hour. [`MM2015`](@ref) stays
 between ``2\times10^{-11}`` and ``6\times10^{-10}``, [`MM2015FixedT`](@ref) between ``1.1\times10^{-4}``
-and ``1.1\times10^{-3}``, and [`MM2015PiecewiseLinear`](@ref) between ``10^{-3}`` and 0.28. Right: the error of
+and ``1.1\times10^{-3}``, and [`MM2015PiecewiseLinear`](@ref) between ``9.6\times10^{-4}`` and 0.28. Right: the error of
 [`MM2015`](@ref) against its relative tolerance for three of the Gallery states, each over the step
 of its evolution figure, with the line where the error equals the tolerance.
 

@@ -1,3 +1,7 @@
+```@meta
+CurrentModule = MorrisonMilbrandt2015
+```
+
 # Active phases and events
 
 The three schemes share the rule that decides which phases are active and the list of events
@@ -83,6 +87,22 @@ Exceeding either bound is an error.
 
 For `MM2015` the coefficients change along the trajectory, and the argument above gives no bound;
 the integrator limits the number of steps.
+
+## Thresholds
+
+The keyword `thresholds` of each scheme takes [`Thresholds`](@ref). At the start of each segment of
+`MM2015FixedT` and `MM2015PiecewiseLinear`, liquid or ice below `x_min` returns to the vapor, which
+raises ``\delta`` and ``\delta_i`` by its mass, and a supersaturation below `δ_min` over liquid or
+`δ_i_min` over ice in magnitude is set to zero, where the boundary rule decides the phase. Neither
+is an event. `MM2015` applies the thresholds at the start of each integrator step
+([Integrator](integrator.md#Thresholds)). The defaults round nothing.
+
+## Clear air
+
+A segment of `MM2015FixedT` or `MM2015PiecewiseLinear` that starts without condensate ends the step
+when both supersaturations stay negative to the end of the step at the rate ``A_l``: no phase can
+form, and the rates over the remaining time are zero. Above ``T_\mathrm{tr}`` only ``\delta``
+counts, because ice does not form there.
 
 ## Triple point
 

@@ -57,7 +57,8 @@ Newton's method on ``g`` polishes the seed until
 iterate that leaves the bracket ``(0, \hat u_\star)``, ``(\hat u_\star, s_0)``, ``(0, s_0)`` or
 ``(0, \infty)`` restarts at the bracket end where ``g\,g'' > 0``, from which Newton converges
 monotonically; ``g(s_0) = -K e^{-s_0}`` makes ``s_0`` such an end. One more Newton correction is applied
-when the Kantorovich condition ``|g''|\,|g| \le g'^2/2`` holds.
+when the Kantorovich condition ``|g''|\,|g| \le g'^2/2`` holds. A root that does not reach the floor
+within [`MAX_DEPLETION_CORRECTIONS`](@ref) corrections raises an error.
 
 [`MM2015FixedT`](@ref) uses these depletion times. [`MM2015`](@ref) locates exhaustion as an event
 along its numerical solution ([Integrator](numerics/integrator.md)).
@@ -70,6 +71,7 @@ get_t_out_of_q_WBF
 _mm_smallest_depletion_time
 _mm_depl_eval
 _mm_depl_newton
+MAX_DEPLETION_CORRECTIONS
 _depletion_quadratic_seed
 _depletion_phi_inverse
 _depletion_pe

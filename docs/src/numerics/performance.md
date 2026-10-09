@@ -32,7 +32,7 @@ A host that supplies its own thermodynamics through [`coefficients`](@ref) and c
 ## What the cost scales with
 
 - [`MM2015PiecewiseLinear`](@ref): one division and a few multiplications per segment; a step has
-  at most 13 segments.
+  at most 14 segments.
 - [`MM2015FixedT`](@ref): one `expm1` per segment, one `log1p` per saturation event, and one
   depletion root per exhaustion event. A depletion root is a closed-form Lambert ``W`` seed and at
   most 8 Newton corrections ([Depletion times](../depletion.md)). Steps without exhaustion cost a

@@ -10,14 +10,14 @@ humidities, the relaxation times of its liquid and ice, and the external forcing
 the mean phase-change rates of liquid and ice over the step, with the Wegener–Bergeron–Findeisen
 exchange between them, the exhaustion of either phase, and activation from clear air.
 
-| Scheme | Temperature | Cost | Page |
+| Scheme | Temperature | Work per call | Page |
 |:--|:--|:--|:--|
-| [`MM2015PiecewiseLinear`](@ref) | coefficients frozen at the step start; rates frozen per segment | 50–127 ns | [MM2015PiecewiseLinear](schemes/piecewise_linear.md) |
-| [`MM2015FixedT`](@ref) | coefficients frozen at the step start; the exact solution of Appendix C | 47–294 ns | [MM2015FixedT](schemes/fixed_T.md) |
-| [`MM2015`](@ref) | evolves; the parcel model solved to a tolerance | 0.5–18 µs | [MM2015](schemes/t_updating.md) |
+| [`MM2015PiecewiseLinear`](@ref) | coefficients frozen at the step start; rates frozen per segment | arithmetic per segment, at most 14 segments | [MM2015PiecewiseLinear](schemes/piecewise_linear.md) |
+| [`MM2015FixedT`](@ref) | coefficients frozen at the step start; the exact solution of Appendix C | one `expm1` per segment and a closed-form root per exhaustion, at most 9 segments | [MM2015FixedT](schemes/fixed_T.md) |
+| [`MM2015`](@ref) | evolves; the parcel model solved to a tolerance | integrator steps, fewer at a looser tolerance | [MM2015](schemes/t_updating.md) |
 
-Costs are for one call on the 17 test states in `Float64` ([Performance](numerics/performance.md)).
-Every call is free of allocations.
+Every call is free of allocations. [Performance](numerics/performance.md) has the measured times
+and what they scale with.
 
 ## Quick start
 

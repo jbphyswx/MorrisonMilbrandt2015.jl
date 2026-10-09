@@ -25,7 +25,8 @@ located by a bracketing root finder.
 
 ## Keywords
 
-`MM2015{FT}(; rtol, atol_q, atol_T, max_steps, root_finder)`; `MM2015()` is `MM2015{Float64}()`.
+`MM2015{FT}(; rtol, atol_q, atol_T, max_steps, root_finder, thresholds)`; `MM2015()` is
+`MM2015{Float64}()`.
 
 | Keyword | Meaning | Default |
 |:--|:--|:--|
@@ -34,6 +35,7 @@ located by a bracketing root finder.
 | `atol_T` | absolute tolerance on ``T`` [K] | ``100`` `rtol` |
 | `max_steps` | largest number of integrator steps; more raise an error | 10 000 |
 | `root_finder` | bracketing root finder for events | `BrentRootFinder()` |
+| `thresholds` | condensate and supersaturations rounded at each step start ([Integrator](../numerics/integrator.md#Thresholds)) | `Thresholds()`, no rounding |
 
 `RootSolversRootFinder(method)`, after `using RootSolvers`, locates events with a bracketing method
 of RootSolvers.jl such as `RootSolvers.BrentsMethod`. An `rtol` below ``4\varepsilon`` of the
@@ -42,7 +44,7 @@ problem's floating-point type raises an error, so a `Float32` problem takes `MM2
 With the defaults, on the 17 test states (default backend, specific humidity), the mean rates
 differ from a Radau IIA reference solved to a relative tolerance of ``10^{-13}`` by at most
 ``1.5\times10^{-8}`` of the larger rate in `Float64` (``10^{-11}`` to ``10^{-9}`` on most states)
-and ``3.4\times10^{-4}`` in `Float32`. Larger tolerances take fewer steps.
+and ``1.3\times10^{-4}`` in `Float32`. Larger tolerances take fewer steps.
 
 ## Relation to `MM2015FixedT`
 

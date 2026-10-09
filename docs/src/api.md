@@ -26,6 +26,7 @@ DryAirMixingRatio
 MM2015PiecewiseLinear
 MM2015FixedT
 MM2015
+Thresholds
 ```
 
 ## Rates
@@ -35,14 +36,26 @@ tendencies
 validate
 ```
 
+## Thermodynamics from the host model
+
+A host model that already holds the saturation humidities, latent heats, heat capacity, and density
+of the parcel passes them as [`ThermodynamicInputs`](@ref) to [`coefficients`](@ref) and calls
+`tendencies(scheme, k::Coefficients, Δt)` with [`MM2015FixedT`](@ref) or
+[`MM2015PiecewiseLinear`](@ref).
+
+```@docs
+Coefficients
+coefficients
+ThermodynamicInputs
+thermodynamic_inputs
+```
+
 ## Recorded steps
 
 ```@docs
 trajectory
 Trajectory
 Segment
-StepTrajectory
-StepRecord
 state_at
 EventKind
 ActivePhases

@@ -6,18 +6,20 @@ It is a forward-Euler step of C1 from each event to the next.
 
 ## Segments
 
-At the start ``t_s`` of a segment, with supersaturation ``\delta_s``, the rates are
+At the start ``t_s`` of a segment, with supersaturations ``\delta_s`` over liquid and
+``\delta_{i,s}`` over ice, the rates are
 
 ```math
 S_l = [l]\,\frac{\delta_s}{\tau_l\Gamma_l}, \qquad
-S_i = [i]\,\frac{\delta_s + \Delta}{\tau_i\Gamma_i},
+S_i = [i]\,\frac{\delta_{i,s}}{\tau_i\Gamma_i},
 ```
 
-and they stay constant over the segment. The vapor budget with constant rates gives a constant
-slope,
+and they stay constant over the segment. The vapor budget with constant rates gives both
+supersaturations the same constant slope,
 
 ```math
 \delta(t) = \delta_s + f(\delta_s)\,(t - t_s), \qquad
+\delta_i(t) = \delta_{i,s} + f(\delta_s)\,(t - t_s), \qquad
 q_l(t) = q_l(t_s) + S_l\,(t - t_s), \qquad
 q_i(t) = q_i(t_s) + S_i\,(t - t_s),
 ```
@@ -32,7 +34,7 @@ The events of [`MM2015FixedT`](fixed_T.md), with linear times, and one more:
 | Event | Condition | Time from the segment start |
 |:--|:--|:--|
 | liquid saturation | ``\delta = 0`` | ``-\delta_s / f(\delta_s)`` when positive |
-| ice saturation | ``\delta = -\Delta`` | ``-(\delta_s + \Delta) / f(\delta_s)`` when positive |
+| ice saturation | ``\delta_i = 0`` | ``-\delta_{i,s} / f(\delta_s)`` when positive |
 | liquid exhausted | ``q_l = 0`` | ``-q_l(t_s)/S_l`` when positive |
 | ice exhausted | ``q_i = 0`` | ``-q_i(t_s)/S_i`` when positive |
 | equilibrium | ``\delta = \delta_\mathrm{eq}`` | ``\tau`` |
@@ -54,4 +56,4 @@ The mean rates are the summed condensate increments of all segments divided by `
   ``(\delta_s - \delta_\mathrm{eq})\,\tau\,e^{-\Delta t/\tau}`` divided by ``\tau_c\Gamma_c``, which
   vanishes for ``\Delta t \gg \tau``.
 - A phase that forms at its saturation boundary starts its segment at ``\delta_s = 0`` or
-  ``\delta_s = -\Delta``, so its rate stays zero until the equilibrium event, a time ``\tau`` later.
+  ``\delta_{i,s} = 0``, so its rate stays zero until the equilibrium event, a time ``\tau`` later.

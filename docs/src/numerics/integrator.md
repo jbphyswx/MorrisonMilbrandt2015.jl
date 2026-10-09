@@ -1,3 +1,7 @@
+```@meta
+CurrentModule = MorrisonMilbrandt2015
+```
+
 # Integrator
 
 [`MM2015`](../schemes/t_updating.md) integrates the [parcel model](../theory/parcel_model.md)
@@ -157,21 +161,20 @@ inactive liquid; ``-q_i`` for active ice; ``\delta_i`` for inactive ice below ``
 for active ice above it, ``-\delta_i`` for inactive ice with mass above it; and the signed
 distance past ``T_\mathrm{tr}``. An event happens where one of them becomes positive.
 
-After an accepted step, the event functions positive at its end have fired. The event time
-``s^\star \in (0, h]`` is a zero of ``s \mapsto \max_k g_k(\Phi_s(u_n))/r_k`` over the fired event
-functions, where ``\Phi_s`` is the `exprb43` step of length ``s`` from ``u_n`` with the same
-``J_n``, ``v_n``, and ``D``, and ``r_k`` is the rounding of ``g_k`` at the end of the step. A
-bracketing root finder narrows the sign change until its width is below ``16\varepsilon\,(t_n + h)``
-or its positive end is within ``r_k`` of zero, and returns the positive end; across a run of equal
-zeros it doubles its step. When an event function that did not fire is positive at ``s^\star``, or
-its cubic Hermite interpolant on ``[0, s^\star]`` rises above zero, the step is halved.
+After an accepted step, the event functions positive at its end have fired. The one whose straight
+line between its values at the two ends of the step crosses zero first is located first: its event
+time ``s^\star \in (0, h]`` is a zero of ``s \mapsto g_k(\Phi_s(u_n))``, where ``\Phi_s`` is the
+`exprb43` step of length ``s`` from ``u_n`` with the same ``J_n``, ``v_n``, and ``D``. A bracketing
+root finder narrows the sign change to a width of ``16\varepsilon\,(t_n + h)``, or of
+``8\,r_k\,s/(g_k(s) - g_k(0))`` when that is larger, and returns its positive end. Here ``r_k`` is
+``\varepsilon`` times the size of the quantities ``g_k`` is formed from, so the event time is located
+to the resolution of ``g_k`` at its mean rate over the step. An event function that is positive at
+``s^\star`` and already positive at the other end of the bracket crossed first, and is located in
+turn on the shorter interval. One that is positive only at ``s^\star`` fires at ``s^\star`` as well.
 
-At ``s^\star``, each event function that fired must not exceed the sum of its absolute tolerance,
-its rounding resolution, and twice its rate times the bracket width, or the step raises an error.
-The rounding resolution covers the rounding of the state at both ends of the step and the response
-of the rates, over the step, to the rounding of ``T`` and of the humidities; ``r_k`` is its part at
-the end of the step. The step is then taken to ``s^\star``, an exhausted phase is set to zero mass,
-and the active phases are re-evaluated.
+When the cubic Hermite interpolant of an event function that did not fire rises above zero on
+``[0, s^\star]``, the step is halved. When it stays below zero, the step is taken to ``s^\star``, a
+phase whose exhaustion fired is set to zero mass, and the active phases are re-evaluated.
 
 When no event function is positive at the end of a step, the step is halved if the cubic Hermite
 interpolant of an event function through its values and time derivatives at the two ends rises
@@ -179,8 +182,18 @@ above zero, so a turning point cannot hide two crossings inside one step.
 
 The root finder is the keyword `root_finder`: `BrentRootFinder()` (Brent–Dekker iteration with a
 bisection safeguard) by default, or `RootSolversRootFinder(method)` with a bracketing method of
-RootSolvers.jl after `using RootSolvers`. Both stop on the same width and value criteria. From an
-exact zero, where RootSolvers.jl stops, the bracket is narrowed by the same doubling steps and then
-by bisection.
+RootSolvers.jl after `using RootSolvers`. Both stop at the same width. From an exact zero, Brent
+steps toward the sign change by the tolerance and doubles the step across a run of zeros.
+RootSolvers.jl needs a negative value at the lower end, so the extension steps off an exact zero in
+the same way before calling it and narrows its result to the width by bisection.
 
 The number of steps is bounded by the keyword `max_steps`. Exceeding it raises an error.
+
+## Thresholds
+
+The keyword `thresholds` takes [`Thresholds`](@ref) and rounds small quantities at the start of
+every step. Liquid or ice below `x_min` returns to the vapor, and the temperature falls by the latent
+heat of the returned mass, ``L\,x/c_{pm}``. A phase without mass forms when its supersaturation
+exceeds `δ_min` (liquid) or `δ_i_min` (ice), or lies within that margin, is not negative, and rises;
+its event function uses the supersaturation rounded to zero within the margin. A phase with mass uses
+its supersaturation unrounded. The defaults round nothing.

@@ -9,12 +9,10 @@ and can change between versions.
 
 ## Coefficients
 
-The single conversion from an [`MM2015Problem`](@ref) in either moisture basis to the frozen
-coefficients of [Appendix C](theory/appendix_c.md).
+The conversion from an [`MM2015Problem`](@ref) in either moisture basis to the
+[`Coefficients`](@ref) of [Appendix C](theory/appendix_c.md).
 
 ```@docs
-Coefficients
-coefficients
 dry_fraction
 specific_humidity
 basis_heat_capacity
@@ -22,6 +20,7 @@ basis_heat_capacity_derivative
 basis_density
 basis_saturation
 basis_saturation_second
+saturation_total_water_derivative
 total_water_derivatives
 ```
 
@@ -30,7 +29,7 @@ total_water_derivatives
 ```@docs
 relaxation
 supersaturation_tendency
-equilibrium_supersaturation
+equilibrium_supersaturations
 frozen_evolution
 condensate_increments
 saturation_time
@@ -41,18 +40,18 @@ saturation_time
 ```@docs
 active_phases
 max_events
+stays_subsaturated
 evolve
 NoRecorder
 SegmentRecorder
-StepRecorder
 ```
 
 ## Frozen-coefficient schemes
 
 ```@docs
 advance
-next_event
-linear_rates
+segment
+linear_segment
 linear_time
 ```
 
@@ -65,6 +64,8 @@ ParcelRHS
 parcel_linearization
 supersaturation_rates
 below_triple
+rounded_supersaturations
+return_small_condensate
 two_sum
 compensated_add
 scaled_error
@@ -73,12 +74,16 @@ scaled_error
 ## Event location in `MM2015`
 
 ```@docs
+step_start
 event_indicators
 event_indicator_rates
-indicator_resolution
+StepIndicators
+StepIndicator
+indicator_rounding
+earliest_fired
 event_kind
 masked
-EventMargin
+all_but
 hermite_maximum
 hidden_crossing
 ```
