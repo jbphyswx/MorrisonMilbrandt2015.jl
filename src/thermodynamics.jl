@@ -1,8 +1,8 @@
 """
     DefaultThermodynamicsBackend()
 
-Thermodynamics backend without dependencies. Its constants are the ClimaParams.jl defaults. Its
-saturation vapor pressures integrate the Clausius–Clapeyron relation with latent heats that vary
+Thermodynamics backend without dependencies, with fixed gas constants, heat capacities, gravity, and
+triple point. Its saturation vapor pressures integrate the Clausius–Clapeyron relation with latent heats that vary
 linearly with temperature (Kirchhoff), anchored at the triple point.
 """
 struct DefaultThermodynamicsBackend end

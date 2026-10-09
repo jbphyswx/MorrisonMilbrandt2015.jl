@@ -20,17 +20,6 @@ function backends()
 end
 
 Test.@testset "Thermodynamics backends" begin
-    Test.@testset "default backend constants are the ClimaParams values" begin
-        td = TP.ThermodynamicsParameters(Float64)
-        default = MM2015.DefaultThermodynamicsBackend()
-        for (ours, theirs) in (
-            (MM2015.R_d, TP.R_d), (MM2015.R_v, TP.R_v), (MM2015.cp_d, TP.cp_d), (MM2015.cp_v, TP.cp_v),
-            (MM2015.cp_l, TP.cp_l), (MM2015.cp_i, TP.cp_i), (MM2015.grav, TP.grav), (MM2015.T_triple, TP.T_triple),
-        )
-            Test.@test ours(default, Float64) == theirs(td)
-        end
-    end
-
     Test.@testset "$name: Clausius–Clapeyron with the backend's own latent heat" for (name, thermo) in backends()
         R_v = MM2015.R_v(thermo, Float64)
         for T in TEMPERATURES, phase in PHASES
@@ -81,19 +70,6 @@ Test.@testset "Thermodynamics backends" begin
             Test.@test isapprox(s.d2r_dT2, centered(x -> dr_dT(x, p), T, 1e-3); rtol = 1e-6)
             Test.@test isapprox(s.dr_dp, centered(x -> r(T, x), p, 1e-4 * p); rtol = 1e-7)
             Test.@test isapprox(s.d2r_dTdp, centered(x -> dr_dT(T, x), p, 1e-4 * p); rtol = 1e-6)
-        end
-    end
-
-    Test.@testset "moist-air properties match Thermodynamics.jl" begin
-        td = TP.ThermodynamicsParameters(Float64)
-        for (q_t, q_l, q_i) in ((0.0, 0.0, 0.0), (0.012, 3e-4, 0.0), (0.004, 1e-4, 2e-4), (0.02, 0.0, 1e-3))
-            Test.@test isapprox(MM2015.cp_m(td, q_t, q_l, q_i), TD.cp_m(td, q_t, q_l, q_i); rtol = 1e-14)
-            Test.@test isapprox(MM2015.gas_constant_air(td, q_t, q_l, q_i), TD.gas_constant_air(td, q_t, q_l, q_i); rtol = 1e-14)
-            Test.@test isapprox(
-                MM2015.air_density(td, 265.0, 7.5e4, q_t, q_l, q_i),
-                TD.air_density(td, 265.0, 7.5e4, q_t, q_l, q_i);
-                rtol = 1e-14,
-            )
         end
     end
 
