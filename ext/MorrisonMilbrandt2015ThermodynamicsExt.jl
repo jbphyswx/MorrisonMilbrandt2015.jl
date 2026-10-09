@@ -3,7 +3,15 @@ module MorrisonMilbrandt2015ThermodynamicsExt
 using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 using Thermodynamics: Thermodynamics as TD, Parameters as TP
 
-const APS = TP.AbstractThermodynamicsParameters
+
+const TD_VERSION = pkgversion(TD)
+
+# AbstractThermodynamicsParameters was introduced in TD 0.12.6.
+const APS = if TD_VERSION ≥ v"0.12.6"
+    TP.AbstractThermodynamicsParameters
+else
+    TP.ThermodynamicsParameters
+end
 
 MM2015.R_d(ps::APS, ::Type{FT}) where {FT} = FT(TP.R_d(ps))
 MM2015.R_v(ps::APS, ::Type{FT}) where {FT} = FT(TP.R_v(ps))
