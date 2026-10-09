@@ -1,28 +1,25 @@
-# ============================================================================================== #
-# Fast real-valued Lambert W (Fukushima 50-bit piecewise minimax rational approximation).
-#
-# Port of: Toshio Fukushima (2020), "Precise and fast computation of Lambert W function by
-# piecewise minimax rational function approximation with variable transformation"
-# (DOI: 10.13140/RG.2.2.30264.37128) — translated MECHANICALLY (coefficients verbatim) from the
-# Rust crate `lambert_w` by Johanna Sörngård (https://github.com/JSorngard/lambert_w,
-# SPDX: MIT OR Apache-2.0). Structure: conditional switch on the argument, then ONE sqrt (or log)
-# variable transformation + one [8/8] minimax rational (two `evalpoly` + a division). No iteration,
-# no allocation, real-only (LambertW.jl carries generic/complex machinery we never use and is
-# 5-20x slower, worst at the branch point). Accuracy ≈ 50 bits (~3 ulp).
-#
-# fast_lambertw0(z):  W₀(z)  on [-1/e, ∞)   (NaN below -1/e; -1 at -1/e exactly; Inf at Inf)
-# fast_lambertwm1(z): W₋₁(z) on [-1/e, 0)   (NaN outside;   -1 at -1/e exactly; -Inf at 0)
-#
-# Non-Float64 reals convert through Float64 (production is Float64).
-# ============================================================================================== #
+# Float64 branches: piecewise minimax rational approximations of Fukushima (2020), doi:10.13140/RG.2.2.30264.37128,
+# with coefficients from the Rust crate `lambert_w` by J. Sörngård (MIT OR Apache-2.0).
+
+"""
+    fast_lambertw0(z)
+
+Principal real branch `W₀(z)` for `z ≥ -1/e`: `-1` at `-1/e`, `NaN` below it. Float16 and Float32
+arguments are evaluated in Float64; other floating-point types iterate.
+"""
+function fast_lambertw0 end
+
+"""
+    fast_lambertwm1(z)
+
+Lower real branch `W₋₁(z)` for `-1/e ≤ z < 0`: `-1` at `-1/e`, `-Inf` at `0`, `NaN` elsewhere.
+Float16 and Float32 arguments are evaluated in Float64; other floating-point types iterate.
+"""
+function fast_lambertwm1 end
 
 @inline function fast_lambertw0(z::Float64)
-    # zc = z + 1/e with a DOUBLE-DOUBLE branch-point constant: −1/e = HI + LO (HI = f64(−1/e),
-    # LO = +1.2428753672788363e-17 the residual). Near the branch point z − HI is EXACT (Sterbenz),
-    # so subtracting LO recovers the true distance to the branch point at full relative precision —
-    # a single-float constant loses ~1e-17 absolute there, i.e. ~2e-9 relative in W (validated);
-    # far from the branch point LO is negligible. Convention: z == HI (the f64 nearest −1/e) ↦ −1.
-    zc = (z - (-0.367_879_441_171_442_32)) - 1.242_875_367_278_836_3e-17   # (z − HI) − LO
+    # zc = z + 1/e with −1/e = HI + LO in double-double, exact near the branch point
+    zc = (z - (-0.367_879_441_171_442_32)) - 1.242_875_367_278_836_3e-17
     if isnan(z)
         return NaN
     elseif z < -0.367_879_441_171_442_32  # below the (f64) branch point: no real W₀
@@ -30,11 +27,8 @@
     elseif z == -0.367_879_441_171_442_32
         return -1.0
     elseif abs(z) < 0.01
-        # tiny |z|: W₀(z) ≈ z, which the piecewise rationals (minimax in ~ABSOLUTE error, ~1e-18)
-        # cannot resolve relatively (rel error → ∞ as z → 0). Exact Maclaurin series instead:
-        # W₀(z) = Σₙ (−n)^{n−1}/n! zⁿ; 12 terms ⇒ rel truncation ≤ (e·0.01)¹² ≈ 2e-19 at the gate.
-        # Faster than the rational path too (one evalpoly, no sqrt, no division). Exact at z = ±0.0.
-        return z * evalpoly(z, (   # cₙ = (−n)^{n−1}/n!, exactly rounded (generated & verified vs BigFloat)
+        # Maclaurin series W₀(z) = Σ (−n)^{n−1}/n! zⁿ with correctly rounded coefficients; truncation < 2e-19 relative
+        return z * evalpoly(z, (
             1.0, -1.0, 1.5, -2.6666666666666665, 5.208333333333333, -10.8,
             23.343055555555555, -52.01269841269841, 118.62522321428571,
             -275.5731922398589, 649.7871723434745, -1551.1605194805195,
@@ -120,7 +114,9 @@
     end
 end
 
-"""Precision-preserving Halley evaluation of the real principal branch."""
+fast_lambertw0(z::Union{Float16, Float32}) = oftype(z, fast_lambertw0(Float64(z)))
+
+# Halley iteration on w e^w = z at the precision of FT
 function fast_lambertw0(z::FT) where {FT <: AbstractFloat}
     branch = -inv(exp(one(FT)))
     isnan(z) && return z
@@ -149,8 +145,6 @@ function fast_lambertw0(z::FT) where {FT <: AbstractFloat}
     return w
 end
 
-
-
 @inline function fast_lambertwm1(z::Float64)
     # double-double branch-point constant, same reasoning as in fast_lambertw0
     zc = (z - (-0.367_879_441_171_442_32)) - 1.242_875_367_278_836_3e-17   # (z − HI) − LO
@@ -163,9 +157,7 @@ end
     elseif z ≥ 0.0                        # W₋₁ only exists on [-1/e, 0)
         return iszero(z) ? -Inf : NaN
     elseif z ≤ -0.354_291_330_944_216_4
-        x = sqrt(zc)
-        return evalpoly(x, (-1.000_000_000_000_000_111_0, 4.296_301_617_877_712_700_9, -4.099_140_792_400_745_761_2, -6.844_284_220_083_330_972_4, 17.084_773_793_345_271_001, -13.015_133_123_886_661_124, 3.930_360_862_953_985_104_9, -0.346_367_465_122_474_573_19)) /
-               evalpoly(x, (1.0, -6.627_945_599_474_762_405_9, 17.740_962_374_121_397_994, -24.446_872_319_343_475_890, 18.249_006_287_190_617_068, -7.058_075_875_662_479_055_0, 1.197_878_676_279_400_354_5, -0.053_875_778_140_352_599_789))
+        return _lambertwm1_branch_piece(zc)
     elseif z ≤ -0.188_726_882_822_894_340_49
         x = -z / (0.606_530_659_712_633_4 + sqrt(zc))
         return evalpoly(x, (-8.225_315_526_444_684_485_4, -813.207_067_320_014_871_78, -15_270.113_237_678_509_000, -79_971.585_089_674_149_237, -103_667.542_158_083_765_11, 42_284.755_505_061_257_427, 74_953.525_397_605_484_884, 10_554.369_146_366_736_811)) /
@@ -211,7 +203,15 @@ end
     end
 end
 
-"""Precision-preserving real `W₋₁` evaluation for non-Float64 floating types."""
+# W₋₁ on z ∈ (−1/e, −0.3542913309442164] from zc = z + 1/e
+@inline function _lambertwm1_branch_piece(zc::Float64)
+    x = sqrt(zc)
+    return evalpoly(x, (-1.000_000_000_000_000_111_0, 4.296_301_617_877_712_700_9, -4.099_140_792_400_745_761_2, -6.844_284_220_083_330_972_4, 17.084_773_793_345_271_001, -13.015_133_123_886_661_124, 3.930_360_862_953_985_104_9, -0.346_367_465_122_474_573_19)) /
+           evalpoly(x, (1.0, -6.627_945_599_474_762_405_9, 17.740_962_374_121_397_994, -24.446_872_319_343_475_890, 18.249_006_287_190_617_068, -7.058_075_875_662_479_055_0, 1.197_878_676_279_400_354_5, -0.053_875_778_140_352_599_789))
+end
+
+fast_lambertwm1(z::Union{Float16, Float32}) = oftype(z, fast_lambertwm1(Float64(z)))
+
 function fast_lambertwm1(z::FT) where {FT <: AbstractFloat}
     branch = -inv(exp(one(FT)))
     isnan(z) && return z
@@ -222,19 +222,23 @@ function fast_lambertwm1(z::FT) where {FT <: AbstractFloat}
 end
 
 """
-    fast_lambertwm1_from_ln(lnmz::Float64)
+    fast_lambertwm1_from_ln(lnmz)
 
-`W₋₁(z)` given `lnmz = ln(−z)` DIRECTLY (i.e. `z = −e^{lnmz} ∈ [−1/e, 0)`). For `lnmz ≤ −9.47`
-Fukushima's V-pieces use `ln(−z)` itself as their transformed variable, so a caller that already knows
-`ln(−z)` analytically (e.g. the MM2015 depletion solver, which forms `E = ln|z|` in log-space precisely
-to dodge exp under/overflow) skips BOTH the `−exp(lnmz)` and the internal `log(−z)` — 2 of the 3
-transcendentals in the chain. Larger arguments fall back through `fast_lambertwm1(−exp(lnmz))` (the
-X/Y pieces need `z` itself). Same coefficients as `fast_lambertwm1`; same ~50-bit accuracy.
+`W₋₁(z)` for `z = -e^{lnmz}`, from `lnmz = ln(-z) ≤ -1`. Float64 evaluates the branch-point piece
+in `z + 1/e = -expm1(lnmz + 1)/e`, the next pieces in `z`, and Fukushima's pieces in `ln(-z)` down
+to `lnmz = -745`, iterating on `w + ln(-w) = lnmz` below. Float16 and Float32 are evaluated in
+Float64; other floating-point types iterate.
 """
+function fast_lambertwm1_from_ln end
+
 @inline function fast_lambertwm1_from_ln(lnmz::Float64)
-    if lnmz > -9.47                       # X/Y-piece territory (|z| ≳ 7.7e-5): need z itself
+    if lnmz > -1.0
+        return NaN
+    elseif lnmz ≥ -1.037_635_735_532_509      # z ≤ −0.3542913309442164; lnmz + 1 is exact here
+        return _lambertwm1_branch_piece(-expm1(lnmz + 1.0) * 0.367_879_441_171_442_32)
+    elseif lnmz > -9.47                   # the Y pieces are written in z
         return fast_lambertwm1(-exp(lnmz))
-    elseif lnmz == -Inf                   # z = 0⁻ ⇒ W₋₁ → −∞
+    elseif lnmz == -Inf
         return -Inf
     elseif lnmz ≥ -37.622                 # V_-8   (z-boundary −4.5808e-17)
         x = lnmz
@@ -244,20 +248,20 @@ X/Y pieces need `z` itself). Same coefficients as `fast_lambertwm1`; same ~50-bi
         x = lnmz
         return evalpoly(x, (0.160_453_837_665_705_414_09, 2.221_418_252_446_151_402_9, -0.941_196_624_920_508_929_71, 0.091_921_523_818_747_869_300, -0.002_906_976_053_317_166_322_4, 0.000_032_707_247_990_255_961_149, -1.248_667_233_688_989_301_8e-7, 1.224_743_827_986_178_529_1e-10)) /
                evalpoly(x, (1.0, -0.702_549_960_878_703_322_89, 0.080_974_347_786_703_195_026, -0.002_746_985_002_956_315_393_9, 0.000_031_943_362_385_183_657_062, -1.239_062_068_732_166_643_9e-7, 1.224_163_611_516_820_199_9e-10, -1.027_571_802_054_676_540_0e-17))
-    else                                  # V_-10  (z → 0⁻; NaN input propagates here as NaN)
+    elseif lnmz ≥ -745.0                  # V_-10, fitted where z is representable
         x = lnmz
         return evalpoly(x, (-1.274_217_970_307_544_056_4, 1.369_665_880_542_138_376_5, -0.125_193_453_875_587_832_23, 0.002_515_572_246_076_384_473_7, -0.000_015_748_033_750_499_977_208, 3.431_608_538_691_378_641_0e-8, -2.502_524_288_534_043_853_3e-11, 4.642_388_501_409_958_335_1e-15)) /
                evalpoly(x, (1.0, -0.114_200_064_741_524_656_94, 0.002_428_523_383_212_259_594_2, -0.000_015_520_907_512_751_723_152, 3.412_053_476_039_600_226_0e-8, -2.498_105_618_645_027_458_7e-11, 4.641_976_809_305_970_607_9e-15, -1.360_871_393_694_260_298_5e-23))
+    else
+        return _lambertwm1_from_ln_iterative(lnmz)
     end
 end
 
-"""
-Precision-preserving `W₋₁(-exp(lnmz))` for non-Float64 floating types.
+fast_lambertwm1_from_ln(lnmz::Union{Float16, Float32}) = oftype(lnmz, fast_lambertwm1_from_ln(Float64(lnmz)))
+fast_lambertwm1_from_ln(lnmz::AbstractFloat) = _lambertwm1_from_ln_iterative(lnmz)
 
-The iteration solves `w + log(-w) = lnmz` directly, so very negative `lnmz`
-never underflows through construction of `-exp(lnmz)`.
-"""
-function fast_lambertwm1_from_ln(lnmz::FT) where {FT <: AbstractFloat}
+# Halley iteration on w + ln(-w) = lnmz at the precision of FT
+function _lambertwm1_from_ln_iterative(lnmz::FT) where {FT <: AbstractFloat}
     isnan(lnmz) && return lnmz
     lnmz > -one(FT) && return FT(NaN)
     lnmz == -one(FT) && return -one(FT)

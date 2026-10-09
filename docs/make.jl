@@ -11,13 +11,29 @@ Documenter.makedocs(;
     ),
     pages = [
         "Home" => "index.md",
-        "Mathematical contract" => "mathematical_contract.md",
-        "Equations" => "equations.md",
-        "Depletion" => "depletion.md",
-        "MM2015FixedT" => "mm2015ep.md",
-        "MM2015" => "mm2015.md",
+        "Theory" => [
+            "Parcel model" => "theory/parcel_model.md",
+            "Appendix C" => "theory/appendix_c.md",
+            "Moisture bases" => "theory/moisture_bases.md",
+        ],
+        "Schemes" => [
+            "MM2015FixedT" => "schemes/fixed_T.md",
+            "MM2015PiecewiseLinear" => "schemes/piecewise_linear.md",
+            "MM2015" => "schemes/t_updating.md",
+        ],
+        "Numerics" => [
+            "Active phases and events" => "numerics/events.md",
+            "Integrator" => "numerics/integrator.md",
+            "Depletion" => "depletion.md",
+            "Performance" => "numerics/performance.md",
+        ],
+        "Gallery" => "gallery.md",
+        "Validation" => "validation.md",
         "API" => "api.md",
+        "Internals" => "internals.md",
     ],
+    doctest = true,
     checkdocs = :all,
-    warnonly = [:missing_docs],
 )
+
+Documenter.deploydocs(; repo = "github.com/jbphyswx/MorrisonMilbrandt2015.jl.git", devbranch = "main", push_preview = true)

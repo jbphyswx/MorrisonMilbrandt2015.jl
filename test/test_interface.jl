@@ -1,126 +1,54 @@
-include(joinpath(@__DIR__, "fixture.jl"))
+using Test: Test
+using ClimaParams: ClimaParams
+using Thermodynamics: Thermodynamics as TD
+using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 
-function mm2015_problem(st, basis = MM2015.SpecificHumidity())
-    state = if basis isa MM2015.SpecificHumidity
-        MM2015.MM2015State(st.T, st.p, st.q_tot, st.q_liq, st.q_ice)
-    else
-        q_d = 1 - st.q_tot
-        MM2015.MM2015State(
-            st.T,
-            st.p,
-            st.q_tot / q_d,
-            st.q_liq / q_d,
-            st.q_ice / q_d,
-        )
+isdefined(@__MODULE__, :ParcelCorpus) || include(joinpath(@__DIR__, "corpus.jl"))
+
+"""`problem` with the state fields in `state` and the timescales in `timescales` replaced."""
+function modified(problem; state = (;), timescales = (;))
+    s, τ = problem.state, problem.timescales
+    new_state = MM2015.MM2015State((get(state, name, getfield(s, name)) for name in fieldnames(MM2015.MM2015State))...)
+    new_timescales = MM2015.MM2015Timescales((get(timescales, name, getfield(τ, name)) for name in fieldnames(MM2015.MM2015Timescales))...)
+    return MM2015.MM2015Problem(problem.basis, problem.thermo, new_state, new_timescales, problem.forcing)
+end
+
+Test.@testset "Interface" begin
+    PC = ParcelCorpus
+    thermo = MM2015.DefaultThermodynamicsBackend()
+
+    Test.@testset "validate accepts the corpus" begin
+        for case in PC.CORPUS, basis in (MM2015.SpecificHumidity(), MM2015.DryAirMixingRatio())
+            problem, Δt = PC.corpus_problem(case, thermo; basis)
+            Test.@test MM2015.validate(problem, Δt) === nothing
+        end
     end
-    forcing = MM2015.MM2015Forcing(
-        -st.ρ * st.sc.g * st.w,
-        st.dTdt,
-        st.dqvdt,
-        st.dqvdt,
-    )
-    timescales = MM2015.MM2015Timescales(st.τ_liq, st.τ_ice)
-    return MM2015.MM2015Problem(basis, st.thermo, state, timescales, forcing)
-end
 
-Test.@testset "typed problem boundary matches scalar kernels" begin
-    for scheme in (MM2015.MM2015PiecewiseLinear(), MM2015.MM2015FixedT(), MM2015.MM2015())
-        st = mm2015_build_state(;
-            freezing = :BF,
-            regime = :wbf,
-            q_liq = FT(1e-4),
-            q_ice = FT(1e-4),
-            Δt = FT(3),
-        )
-        problem = mm2015_problem(st)
-        actual = MM2015.tendencies(scheme, problem, st.Δt)
-        Test.@test all(isfinite, actual)
-        Test.@test MM2015.validate(problem, st.Δt) === nothing
+    Test.@testset "validate rejects inputs outside the domain" begin
+        problem, Δt = PC.corpus_problem(PC.corpus_case(:wbf), thermo)
+        Test.@test_throws ArgumentError MM2015.validate(problem, -1.0)
+        Test.@test_throws ArgumentError MM2015.validate(problem, NaN)
+        Test.@test_throws ArgumentError MM2015.validate(modified(problem; state = (; x_liq = -1e-6)), Δt)
+        Test.@test_throws ArgumentError MM2015.validate(modified(problem; state = (; x_ice = -1e-6)), Δt)
+        Test.@test_throws ArgumentError MM2015.validate(modified(problem; state = (; x_tot = problem.state.x_liq)), Δt)
+        Test.@test_throws ArgumentError MM2015.validate(modified(problem; state = (; T = -1.0)), Δt)
+        Test.@test_throws ArgumentError MM2015.validate(modified(problem; state = (; p = 50.0)), Δt)
+        Test.@test_throws ArgumentError MM2015.validate(modified(problem; state = (; x_tot = 1.0)), Δt)
+        Test.@test_throws ArgumentError MM2015.validate(modified(problem; timescales = (; τ_liq = 0.0)), Δt)
+        Test.@test_throws ArgumentError MM2015.validate(modified(problem; timescales = (; τ_ice = -1.0)), Δt)
     end
-end
 
-Test.@testset "closed-parcel moisture bases use one physics kernel" begin
-    st = mm2015_build_state(;
-        freezing = :BF,
-        regime = :wbf,
-        q_liq = FT(1e-4),
-        q_ice = FT(1e-4),
-        Δt = FT(3),
-        w = FT(0),
-        dqvdt = FT(0),
-        dTdt = FT(0),
-    )
-    q_d = 1 - st.q_tot
-    q_inputs = MM2015._scalar_inputs(mm2015_problem(st), st.Δt)
-    r_inputs = MM2015._scalar_inputs(
-        mm2015_problem(st, MM2015.DryAirMixingRatio()),
-        st.Δt,
-    )
-    ε = TD.Parameters.R_d(st.thermo) / TD.Parameters.R_v(st.thermo)
-    r_sl = ε * q_inputs.e_sl / (q_inputs.p - q_inputs.e_sl)
-    Test.@test q_inputs.q_vap_eq_liq ≈ q_d * r_sl
-    Test.@test r_inputs.q_vap_eq_liq ≈ r_sl
-    for scheme in (MM2015.MM2015PiecewiseLinear(), MM2015.MM2015FixedT(), MM2015.MM2015())
-        q_rates = MM2015.tendencies(scheme, mm2015_problem(st), st.Δt)
-        r_rates = MM2015.tendencies(
-            scheme,
-            mm2015_problem(st, MM2015.DryAirMixingRatio()),
-            st.Δt,
-        )
-        Test.@test q_rates[1] ≈ q_d * r_rates[1]
-        Test.@test q_rates[2] ≈ q_d * r_rates[2]
-    end
-end
-
-Test.@testset "validation is explicit" begin
-    st = mm2015_build_state()
-    problem = mm2015_problem(st)
-    bad_state = MM2015.MM2015State(st.T, st.p, st.q_tot, -one(FT), st.q_ice)
-    bad = MM2015.MM2015Problem(
-        problem.basis,
-        problem.thermo,
-        bad_state,
-        problem.timescales,
-        problem.forcing,
-    )
-    Test.@test_throws ArgumentError MM2015.validate(bad, st.Δt)
-    # The hot path deliberately performs no broad validation call.
-    Test.@test MM2015.tendencies(MM2015.MM2015FixedT(), problem, zero(FT)) == (0, 0)
-end
-
-Test.@testset "Float32 public kernels" begin
-    T = Float32
-    backend = MM2015.DefaultThermodynamicsBackend()
-    state = MM2015.MM2015State(T(261), T(8e4), T(0.004), T(1e-4), T(1e-4))
-    timescales = MM2015.MM2015Timescales(T(8), T(12))
-    forcing = MM2015.MM2015Forcing(T(0), T(0), T(0), T(0))
-    problem = MM2015.MM2015Problem(
-        MM2015.SpecificHumidity(),
-        backend,
-        state,
-        timescales,
-        forcing,
-    )
-    for scheme in (MM2015.MM2015PiecewiseLinear(), MM2015.MM2015FixedT(), MM2015.MM2015())
-        rates = MM2015.tendencies(scheme, problem, T(1))
-        Test.@test rates isa Tuple{T, T}
-        Test.@test all(isfinite, rates)
-    end
-end
-
-Test.@testset "inactive phases activate after saturation crossing" begin
-    st = mm2015_build_state(;
-        freezing = :AF,
-        regime = :sub,
-        q_liq = FT(0),
-        q_ice = FT(0),
-        dqvdt = FT(2e-6),
-        Δt = FT(30),
-    )
-    problem = mm2015_problem(st)
-    for scheme in (MM2015.MM2015FixedT(), MM2015.MM2015())
-        rates = MM2015.tendencies(scheme, problem, st.Δt)
-        Test.@test rates[1] > zero(FT)
-        Test.@test rates[2] == zero(FT)
+    Test.@testset "$(nameof(typeof(scheme))): closed-parcel rates convert between bases by q_d" for scheme in (MM2015.MM2015FixedT(), MM2015.MM2015PiecewiseLinear())
+        for case in PC.CORPUS
+            closed = merge(case, (; dq_vap_dt = 0.0))
+            problem_q, Δt = PC.corpus_problem(closed, thermo)
+            problem_r, _ = PC.corpus_problem(closed, thermo; basis = MM2015.DryAirMixingRatio())
+            q_d = 1 - problem_q.state.x_tot
+            S_q = MM2015.tendencies(scheme, problem_q, Δt)
+            S_r = MM2015.tendencies(scheme, problem_r, Δt)
+            scale = max(abs(S_q[1]), abs(S_q[2]))
+            Test.@test abs(S_q[1] - q_d * S_r[1]) ≤ 1e-11 * scale
+            Test.@test abs(S_q[2] - q_d * S_r[2]) ≤ 1e-11 * scale
+        end
     end
 end

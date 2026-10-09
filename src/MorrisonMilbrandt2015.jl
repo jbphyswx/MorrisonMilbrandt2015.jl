@@ -1,14 +1,15 @@
 """
     MorrisonMilbrandt2015
 
-Homogeneous-parcel condensation and deposition source solvers:
+Condensation, evaporation, deposition, and sublimation of a homogeneous air parcel over a time step,
+after Morrison & Milbrandt (2015), Appendix C. [`tendencies`](@ref) returns the mean rates of an
+[`MM2015Problem`](@ref) with one of three schemes:
 
-- [`MM2015PiecewiseLinear`](@ref) — piecewise-linear `S = δ/(τ Γ)` until a milestone.
-- [`MM2015FixedT`](@ref) — Morrison & Milbrandt (2015) Appendix C at frozen T (event-driven C5).
-- [`MM2015`](@ref) — Appendix C with residual T-updating: C6 mass, then NonEquilibrium `pθq` residuals.
+- [`MM2015PiecewiseLinear`](@ref): forward-Euler segments with rates frozen at each segment start.
+- [`MM2015FixedT`](@ref): the exact solution of the frozen-coefficient problem.
+- [`MM2015`](@ref): the parcel model solved numerically, with temperature evolving.
 
-Kernels take unpacked scalars `g, L, c_p, …`. Thermodynamics.jl is a weak dependency
-(`params` plus variables; no stored thermodynamic state).
+Thermodynamics.jl parameter sets serve as backends through a package extension.
 """
 module MorrisonMilbrandt2015
 
@@ -23,20 +24,28 @@ export AbstractMoistureBasis,
     MM2015FixedT,
     MM2015,
     DefaultThermodynamicsBackend,
+    Thresholds,
+    ThermodynamicInputs,
+    coefficients,
     tendencies,
+    trajectory,
     validate
 
-include("types.jl")
-include("units.jl")
 include("solvers.jl")
+include("types.jl")
 include("LambertW.jl")
 include("thermodynamics.jl")
+include("coefficients.jl")
+include("events.jl")
 include("equations.jl")
 include("depletion.jl")
-include("schemes/MM2015PiecewiseLinear.jl")
+include("recorder.jl")
+include("exprb.jl")
 include("schemes/MM2015FixedT.jl")
+include("schemes/MM2015PiecewiseLinear.jl")
 include("schemes/MM2015.jl")
 include("interface.jl")
 include("plotting.jl")
+include("precompile_workload.jl")
 
 end # module

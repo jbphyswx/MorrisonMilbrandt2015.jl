@@ -1,34 +1,93 @@
-include(joinpath(@__DIR__, "fixture.jl"))
+using Test: Test
+using ClimaParams: ClimaParams
+using Thermodynamics: Thermodynamics as TD
+using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 
-Test.@testset "MM2015PiecewiseLinear milestone identity" begin
-    q_sl, q_si = FT(0.008), FT(0.006)
-    τ_liq, τ_ice = FT(10), FT(20)
-    δ_eq, δi_eq = MM2015.get_δ_eq_point(q_sl, q_si, τ_liq, τ_ice; dδdt_no_S = FT(0))
-    Test.@test δ_eq < 0
-    Test.@test δi_eq > 0
-    Test.@test isapprox(δi_eq - δ_eq, q_sl - q_si; rtol = 1e-12)
+isdefined(@__MODULE__, :ParcelCorpus) || include(joinpath(@__DIR__, "corpus.jl"))
 
-    regime = MM2015.Supersaturated(FT(1e-4), FT(1e-4), true)
-    min_t, milestone, S_ql, S_qi, _, _ = MM2015.calculate_next_standard_milestone_time(
-        regime, q_sl, q_si, FT(1e-4), FT(1e-4), FT(5e-4), FT(5e-4) + (q_sl - q_si), true, τ_liq, τ_ice,
-    )
-    Test.@test S_ql > 0 && S_qi > 0
-    Test.@test min_t > 0
-    Test.@test milestone isa MM2015.MilestoneType
-end
+allocated(f, args...) = (f(args...); @allocated f(args...))
+backends() = (("default", MM2015.DefaultThermodynamicsBackend()), ("Thermodynamics.jl", TD.Parameters.ThermodynamicsParameters(Float64)))
 
-Test.@testset "MM2015PiecewiseLinear linear S on a single-phase AF liquid parcel" begin
-    st = mm2015_build_state(;
-        freezing = :AF, regime = :super, q_liq = FT(1e-4), q_ice = FT(0),
-        τ_liq = FT(8), τ_ice = FT(1e9), Δt = FT(0.05), w = FT(0),
-    )
-    S_ql, S_qi = mm2015_call_sources(MM2015.MM2015PiecewiseLinear(), st)
-    Test.@test S_qi == 0 || abs(S_qi) ≤ eps(FT)
-    Test.@test S_ql > 0
-    mm2015_assert_invariants(S_ql, S_qi, st)
-end
+Test.@testset "MM2015PiecewiseLinear" begin
+    PC = ParcelCorpus
+    thermo = MM2015.DefaultThermodynamicsBackend()
+    PL, FixedT = MM2015.MM2015PiecewiseLinear(), MM2015.MM2015FixedT()
 
-Test.@testset "MM2015PiecewiseLinear Δt=0" begin
-    st = mm2015_build_state(; Δt = FT(0), q_liq = FT(1e-4), q_ice = FT(1e-4))
-    Test.@test mm2015_call_sources(MM2015.MM2015PiecewiseLinear(), st) == (0.0, 0.0)
+    Test.@testset "first-order convergence to MM2015FixedT: $name" for name in (:warm_updraft, :wbf, :ice_only_supersaturated, :ice_subliming_liquid_growing)
+        problem, _ = PC.corpus_problem(PC.corpus_case(name), thermo)
+        gaps = map((0.4, 0.2, 0.1, 0.05)) do Δt
+            S_pl = MM2015.tendencies(PL, problem, Δt)
+            S_fixed = MM2015.tendencies(FixedT, problem, Δt)
+            return abs(S_pl[1] - S_fixed[1]) + abs(S_pl[2] - S_fixed[2])
+        end
+        ratios = gaps[1:(end - 1)] ./ gaps[2:end]
+        Test.@test all(r -> 1.9 < r < 2.1, ratios)
+    end
+
+    Test.@testset "equilibrium reached at τ, then held: $name" for (name, liquid, ice) in ((:warm_updraft, true, false), (:stiff, true, false), (:ice_only_supersaturated, false, true))
+        problem, Δt = PC.corpus_problem(PC.corpus_case(name), thermo)
+        tr = MM2015.trajectory(PL, problem, Δt)
+        k = tr.context
+        a = MM2015.ActivePhases(liquid, ice)
+        _, τ, A_δ, A_δi = MM2015.relaxation(k, a)
+        first_segment = first(tr.segments)
+        Test.@test first_segment.event == MM2015.Equilibrium
+        Test.@test first_segment.duration == τ
+        held = tr.segments[2]
+        Test.@test (held.δ, held.δ_i) == (A_δ * τ, A_δi * τ)
+        Test.@test MM2015.state_at(tr, Δt).δ == A_δ * τ
+    end
+
+    Test.@testset "one-phase step without events: PL − FixedT = (δ₀ − δ_eq) τ e^{−Δt/τ} / (τ_l Γ_l Δt): $name" for name in (:warm_updraft, :stiff, :sluggish)
+        problem, Δt = PC.corpus_problem(PC.corpus_case(name), thermo)
+        k = MM2015.coefficients(problem)
+        _, τ, A_c, _ = MM2015.relaxation(k, MM2015.ActivePhases(true, false))
+        expected = τ < Δt ? (k.δ - A_c * τ) * τ * exp(-Δt / τ) / (k.τ_l * k.Γ_l * Δt) : NaN
+        S_pl, S_fixed = MM2015.tendencies(PL, problem, Δt), MM2015.tendencies(FixedT, problem, Δt)
+        if τ < Δt
+            Test.@test isapprox(S_pl[1] - S_fixed[1], expected; rtol = 1e-6, atol = 1e-14 * abs(S_fixed[1]))
+        else
+            Test.@test S_pl[1] ≈ k.δ / (k.τ_l * k.Γ_l)
+        end
+    end
+
+    Test.@testset "zero equilibrium supersaturation is an ordinary state" begin
+        base = MM2015.coefficients(first(PC.corpus_problem(PC.corpus_case(:warm_updraft), thermo)))
+        k = MM2015.Coefficients(base.T, base.p, base.x_l, 0.0, base.x_sl, base.x_si, 2e-6, 2e-6 + base.Δ, base.Γ_l, base.Γ_i, base.α, base.τ_l, base.τ_i, 0.0, false)
+        Δx_l, Δx_i = MM2015.evolve(PL, k, 60.0, MM2015.NoRecorder())
+        Test.@test isfinite(Δx_l) && Δx_l > 0
+        Test.@test Δx_i == 0
+    end
+
+    Test.@testset "trajectory and event bound over the corpus" begin
+        for case in PC.CORPUS
+            problem, Δt = PC.corpus_problem(case, thermo)
+            tr = MM2015.trajectory(PL, problem, Δt)
+            Test.@test tr.rates == MM2015.tendencies(PL, problem, Δt)
+            Test.@test count(s -> s.event != MM2015.EndOfStep, tr.segments) ≤ MM2015.max_events(PL)
+            Test.@test isapprox(sum(s -> s.duration, tr.segments), Δt; rtol = 1e-14)
+        end
+    end
+
+    Test.@testset "Δt = 0" begin
+        problem, _ = PC.corpus_problem(PC.corpus_case(:wbf), thermo)
+        Test.@test MM2015.tendencies(PL, problem, 0.0) == (0.0, 0.0)
+    end
+
+    Test.@testset "$bname, $FT, $(nameof(typeof(basis))): inferred and allocation-free" for (bname, backend) in (
+            backends()...,
+            ("Thermodynamics.jl Float32 parameters", TD.Parameters.ThermodynamicsParameters(Float32)),
+        ),
+        FT in (Float32, Float64),
+        basis in (MM2015.SpecificHumidity(), MM2015.DryAirMixingRatio())
+
+        for name in (:wbf, :activation_ascent, :dual_depletion)
+            problem, Δt = PC.corpus_problem(PC.corpus_case(name), backend; basis, FT)
+            Test.@test Test.@inferred(MM2015.tendencies(PL, problem, Δt)) isa NTuple{2, FT}
+            Test.@test allocated(MM2015.tendencies, PL, problem, Δt) == 0
+            k = MM2015.coefficients(problem)
+            Test.@test Test.@inferred(MM2015.tendencies(PL, k, Δt)) isa NTuple{2, FT}
+            Test.@test allocated(MM2015.tendencies, PL, k, Δt) == 0
+        end
+    end
 end

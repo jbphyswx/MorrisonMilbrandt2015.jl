@@ -32,3 +32,5 @@ JuliaLocalPreferences.toml
 *.json
 
 !docs/src/assets/*.png
+
+!docs/MM2015_Root_Solutions/*.png

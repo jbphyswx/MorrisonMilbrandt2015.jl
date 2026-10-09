@@ -1,34 +1,86 @@
+```@meta
+CurrentModule = MorrisonMilbrandt2015
+```
+
 # MorrisonMilbrandt2015.jl
 
-Homogeneous-parcel condensation and deposition rates. Three schemes share C2–C7
-algebra; they differ in how they treat temperature and events.
+Condensation, evaporation, deposition, and sublimation of a homogeneous air parcel over a model time
+step, after Appendix C of Morrison & Milbrandt (2015). Given the parcel's temperature, pressure,
+humidities, the relaxation times of its liquid and ice, and the external forcing, the package returns
+the mean phase-change rates of liquid and ice over the step, with the Wegener–Bergeron–Findeisen
+exchange between them, the exhaustion of either phase, and activation from clear air.
 
-| Scheme | Physics |
-|--------|---------|
-| [`MM2015PiecewiseLinear`](@ref) | `S = δ / (τ Γ)` until the next milestone. External forcing is `A_c` without the WBF addend. |
-| [`MM2015FixedT`](@ref) | Appendix C at frozen *T*. Saturation time is the C5 invert. |
-| [`MM2015`](@ref) | Appendix C with *T*-updating: frozen-coefficient C6 mass; saturation and freeze are residual roots after a NonEquilibrium `pθq` update. |
+| Scheme | Temperature | Cost | Page |
+|:--|:--|:--|:--|
+| [`MM2015PiecewiseLinear`](@ref) | coefficients frozen at the step start; rates frozen per segment | 50–127 ns | [MM2015PiecewiseLinear](schemes/piecewise_linear.md) |
+| [`MM2015FixedT`](@ref) | coefficients frozen at the step start; the exact solution of Appendix C | 47–294 ns | [MM2015FixedT](schemes/fixed_T.md) |
+| [`MM2015`](@ref) | evolves; the parcel model solved to a tolerance | 0.5–18 µs | [MM2015](schemes/t_updating.md) |
 
-## Units and contracts
+Costs are for one call on the 17 test states in `Float64` ([Performance](numerics/performance.md)).
+Every call is free of allocations.
 
-- Public rates `(S_ql, S_qi)` are specific humidities (kg/kg of moist air per second).
-- Freeze events use **`T_triple`**, where `q_sl` and `q_si` cross.
-- `Δt == 0` returns `(0, 0)`. `q_tot ≥ 1` is an error.
-- A host applies cloud fraction as an area weight of homogeneous sub-regions.
-- The C7 liquid-to-ice saturation-frame offset is intrinsic; hosts apply area
-  weighting outside the homogeneous kernel.
+## Quick start
 
-## Thermodynamics
+```jldoctest quickstart
+julia> using MorrisonMilbrandt2015
 
-Kernels take unpacked scalars (`g`, `L`, `c_p`, `∂q*/∂T`, …).
-[`MM2015PiecewiseLinear`](@ref) and [`MM2015FixedT`](@ref) use those scalars only.
+julia> problem = MM2015Problem(
+           SpecificHumidity(),
+           DefaultThermodynamicsBackend(),
+           MM2015State(261.0, 8.0e4, 2.07e-3, 2.0e-4, 1.0e-4),  # T [K], p [Pa], q_t, q_l, q_i [kg kg⁻¹]
+           MM2015Timescales(8.0, 60.0),                        # τ_liq, τ_ice [s]
+           MM2015Forcing(-5.0, 0.0, 0.0),                      # dp/dt [Pa s⁻¹], dT/dt [K s⁻¹], dq_v/dt [s⁻¹]
+       );
 
-[`MM2015`](@ref) recovers *T* from `θ_liq_ice` at fixed prognostic `q_liq`, `q_ice`
-([`air_temperature_noneq_pθq`](@ref)). Host `dTdt` evolves `θ_li`; with `dTdt = 0`,
-`θ_li` is conserved on a segment.
+julia> validate(problem, 300.0)
 
-Use [`DefaultThermodynamicsBackend`](@ref), or Thermodynamics.jl methods on
-`ThermodynamicsParameters` (params plus variables).
+julia> round.(tendencies(MM2015FixedT(), problem, 300.0); sigdigits = 3)
+(-6.67e-7, 1.2e-6)
+
+julia> round.(tendencies(MM2015(), problem, 300.0); sigdigits = 3)
+(-6.67e-7, 1.21e-6)
+```
+
+The parcel sits between ice and liquid saturation at 261 K and rises at about 0.5 m s⁻¹. Its liquid
+evaporates onto the ice and is exhausted after about 76 s, so the mean liquid rate over 300 s is
+``-q_l/\Delta t``. [`trajectory`](@ref) returns the same step with its segments or integrator steps
+recorded, and [`plot_evolution`](@ref) draws it after `using CairoMakie`.
+
+The moisture variables follow the basis of the problem: [`SpecificHumidity`](@ref) (per unit mass
+of moist air) or [`DryAirMixingRatio`](@ref) (per unit mass of dry air), and so do the returned
+rates. The thermodynamics come from [`DefaultThermodynamicsBackend`](@ref) or, after
+`using Thermodynamics`, from a `Thermodynamics.Parameters.ThermodynamicsParameters` set.
+
+## What the schemes do
+
+![Change over the step, between ice and liquid saturation](assets/step_change_between_saturations.png)
+
+Change of liquid, ice, and their sum over one step against the step, for a parcel at 261 K between
+ice and liquid saturation: the liquid evaporates onto the ice and is exhausted after 26 s, after
+which its change is ``-q_l``. Dots are a reference solution of the parcel model; the lower panel is
+the difference of each scheme from it. [`plot_step_change`](@ref) draws this figure. Five regimes,
+latent heating, and forcing are in the [Gallery](gallery.md).
+
+![Error of each scheme against a reference solution](assets/accuracy.png)
+
+Left: relative error of the mean rates of each scheme against a Radau IIA solution of the parcel
+model, as a function of the step, for the same state. [`MM2015`](@ref) stays below ``10^{-9}``;
+[`MM2015FixedT`](@ref) differs by ``10^{-4}`` to ``10^{-3}`` and [`MM2015PiecewiseLinear`](@ref) by up
+to 0.28. Right: the error of [`MM2015`](@ref) falls with its relative tolerance and stays below it.
+More in [Validation](validation.md).
+
+![Time per call against the floor](assets/speed.png)
+
+Time per call of each scheme on each test state, and the floor set by the transcendental functions
+the call must evaluate ([Performance](numerics/performance.md)).
+
+## Reference
+
+Morrison, H., and J. A. Milbrandt, 2015: Parameterization of cloud microphysics based on the
+prediction of bulk ice particle properties. Part I: Scheme description and idealized tests.
+*J. Atmos. Sci.*, **72**, 287–311, doi:[10.1175/JAS-D-14-0065.1](https://doi.org/10.1175/JAS-D-14-0065.1).
 
 ```@contents
+Pages = ["theory/parcel_model.md", "theory/appendix_c.md", "theory/moisture_bases.md", "schemes/fixed_T.md", "schemes/piecewise_linear.md", "schemes/t_updating.md", "numerics/events.md", "numerics/integrator.md", "depletion.md", "numerics/performance.md", "gallery.md", "validation.md", "api.md", "internals.md"]
+Depth = 1
 ```

@@ -1,42 +1,36 @@
-include(joinpath(@__DIR__, "fixture.jl"))
+using Test: Test
+using ClimaParams: ClimaParams
+using Thermodynamics: Thermodynamics as TD
+using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 
-Test.@testset "moisture-source invariants (designed grid)" begin
-    states_epa = mm2015_designed_states()
-    states_mild = mm2015_designed_states(; include_extreme_τ = false)
-    states_std = filter(st -> abs(st.T - MM2015_T_FREEZE) > FT(0.5), states_mild)
+isdefined(@__MODULE__, :ParcelCorpus) || include(joinpath(@__DIR__, "corpus.jl"))
 
-    Test.@testset "epa" begin
-        n_ok = 0
-        for st in states_epa
-            mm2015_assert_invariants(mm2015_call_sources(MM2015.MM2015FixedT(), st)..., st)
-            n_ok += 1
+backends() = (("default", MM2015.DefaultThermodynamicsBackend()), ("Thermodynamics.jl", TD.Parameters.ThermodynamicsParameters(Float64)))
+
+Test.@testset "Invariants over the corpus" begin
+    PC = ParcelCorpus
+    for (bname, thermo) in backends(),
+        FT in (Float32, Float64),
+        scheme in (MM2015.MM2015FixedT(), MM2015.MM2015PiecewiseLinear(), MM2015.MM2015{FT}()),
+        basis in (MM2015.SpecificHumidity(), MM2015.DryAirMixingRatio())
+
+        Test.@testset "$bname, $(nameof(typeof(scheme))), $(nameof(typeof(basis))), $FT" begin
+            for case in PC.CORPUS
+                problem, Δt = PC.corpus_problem(case, thermo; basis, FT)
+                (; T, x_liq, x_ice) = problem.state
+                S_l, S_i = MM2015.tendencies(scheme, problem, Δt)
+                Test.@test isfinite(S_l) && isfinite(S_i)
+                Test.@test x_liq + S_l * Δt ≥ -4 * eps(FT) * x_liq
+                Test.@test x_ice + S_i * Δt ≥ -4 * eps(FT) * x_ice
+                iszero(x_liq) && Test.@test S_l ≥ 0
+                iszero(x_ice) && Test.@test S_i ≥ 0
+                crosses_triple = scheme isa MM2015.MM2015 &&
+                                 any(r -> r.event == MM2015.TripleCrossing, MM2015.trajectory(scheme, problem, Δt).segments)
+                if T > MM2015.T_triple(thermo, FT) && !crosses_triple
+                    Test.@test S_i ≤ 0
+                    iszero(x_ice) && Test.@test S_i == 0
+                end
+            end
         end
-        Test.@test n_ok == length(states_epa)
-    end
-
-    Test.@testset "standard (mild subset)" begin
-        n_ok = 0
-        for st in states_std
-            mm2015_assert_invariants(mm2015_call_sources(MM2015.MM2015PiecewiseLinear(), st)..., st)
-            n_ok += 1
-        end
-        Test.@test n_ok == length(states_std)
-    end
-
-    Test.@testset "mm2015 (mild subset)" begin
-        n_ok = 0
-        for st in states_std[1:min(end, 80)]
-            mm2015_assert_invariants(mm2015_call_sources(MM2015.MM2015(), st)..., st)
-            n_ok += 1
-        end
-        Test.@test n_ok == min(length(states_std), 80)
-    end
-end
-
-Test.@testset "moisture-source Δt=0 contract" begin
-    st = mm2015_build_state(; Δt = FT(0), q_liq = FT(1e-4), q_ice = FT(1e-4))
-    for scheme in (MM2015.MM2015FixedT(), MM2015.MM2015(), MM2015.MM2015PiecewiseLinear())
-        S_ql, S_qi = mm2015_call_sources(scheme, st)
-        Test.@test S_ql == 0 && S_qi == 0
     end
 end
