@@ -1,7 +1,7 @@
 # MM2015PiecewiseLinear: forward-Euler segments of C1 with rates frozen at each segment start.
 
 """
-    linear_segment(k, a, δ, δ_i) -> (S_l, S_i, slope, τ)
+    linear_segment(k, a, δ, δ_i) -> (; S_l, S_i, slope, τ)
 
 Liquid and ice rates at `(δ, δ_i)`, the common slope of `δ` and `δ_i`, and the time `τ` at which the
 linear path reaches the equilibrium of the active phases `a`. At that equilibrium the slope is zero and
@@ -11,9 +11,9 @@ linear path reaches the equilibrium of the active phases `a`. At that equilibriu
     S_l = a.liquid ? k.r_l * δ : zero(FT)
     S_i = a.ice ? k.r_i * δ_i : zero(FT)
     slope = supersaturation_tendency(k, a, δ, δ_i)
-    inv_τ, τ, A_δ, _ = relaxation(k, a)
-    iszero(inv_τ) && return S_l, S_i, slope, FT(Inf)
-    return δ == A_δ * τ ? (S_l, S_i, zero(FT), FT(Inf)) : (S_l, S_i, slope, τ)
+    (; inv_τ, τ, A_δ) = relaxation(k, a)
+    iszero(inv_τ) && return (; S_l, S_i, slope, τ = FT(Inf))
+    return δ == A_δ * τ ? (; S_l, S_i, slope = zero(FT), τ = FT(Inf)) : (; S_l, S_i, slope, τ)
 end
 
 """Time for `x` to reach zero at the rate `slope`, or `Inf`."""
@@ -23,24 +23,24 @@ end
 end
 
 """
-    advance(::MM2015PiecewiseLinear, k, a, δ, δ_i, t) -> (δ, δ_i, Δx_l, Δx_i)
+    advance(::MM2015PiecewiseLinear, k, a, δ, δ_i, t) -> (; δ, δ_i, Δx_l, Δx_i)
 
 Supersaturations after time `t` and the liquid and ice increments, with the rates at `(δ, δ_i)` held fixed.
 """
 @inline function advance(::MM2015PiecewiseLinear, k::Coefficients{FT}, a::ActivePhases, δ::FT, δ_i::FT, t::FT) where {FT}
-    S_l, S_i, slope, _ = linear_segment(k, a, δ, δ_i)
-    return δ + slope * t, δ_i + slope * t, S_l * t, S_i * t
+    (; S_l, S_i, slope) = linear_segment(k, a, δ, δ_i)
+    return (; δ = δ + slope * t, δ_i = δ_i + slope * t, Δx_l = S_l * t, Δx_i = S_i * t)
 end
 
 """
-    segment(::MM2015PiecewiseLinear, k, a, δ, δ_i, x_l, x_i, remaining) -> (t, kind, δ, δ_i, Δx_l, Δx_i)
+    segment(::MM2015PiecewiseLinear, k, a, δ, δ_i, x_l, x_i, remaining) -> (; duration, event, δ, δ_i, Δx_l, Δx_i)
 
 Duration of the segment that starts at `(δ, δ_i, x_l, x_i)` with the active phases `a` and ends at its
 first event or after `remaining`, the event (`EndOfStep` for the end of the step), and the state change
 over it.
 """
 @inline function segment(::MM2015PiecewiseLinear, k::Coefficients{FT}, a::ActivePhases, δ::FT, δ_i::FT, x_l::FT, x_i::FT, remaining::FT) where {FT}
-    S_l, S_i, slope, τ = linear_segment(k, a, δ, δ_i)
+    (; S_l, S_i, slope, τ) = linear_segment(k, a, δ, δ_i)
     t, kind = remaining, EndOfStep
     τ < t && ((t, kind) = (τ, Equilibrium))
     if x_l > 0
@@ -60,5 +60,5 @@ over it.
         t_i = linear_time(δ_i, slope)
         t_i < t && ((t, kind) = (t_i, IceSaturation))
     end
-    return t, kind, δ + slope * t, δ_i + slope * t, S_l * t, S_i * t
+    return (; duration = t, event = kind, δ = δ + slope * t, δ_i = δ_i + slope * t, Δx_l = S_l * t, Δx_i = S_i * t)
 end

@@ -92,7 +92,7 @@ function step_components(problem::MM2015.MM2015Problem{FT}, Δt) where {FT}
     s = MM2015.parcel_state(problem, t, u)
     below = MM2015.below_triple(problem, s)
     a = MM2015.active_phases(problem, s, below)
-    F, J, v = MM2015.parcel_linearization(problem, a, s)
+    (; F, J, v) = MM2015.parcel_linearization(problem, a, s)
     scaling = MM2015.balancing(J)
     rhs = MM2015.ParcelRHS(problem, a)
     h = Δt / 8
@@ -102,7 +102,7 @@ function step_components(problem::MM2015.MM2015Problem{FT}, Δt) where {FT}
         balancing = measure(MM2015.balancing, J).time_ns,
         rhs = measure(rhs, t, u).time_ns,
         phi_functions = measure(MM2015.phi_functions, J .* (h / 2), scaling).time_ns,
-        exprb43_step = measure(MM2015.exprb43_step, rhs, t, u, h, F, J, v, scaling).time_ns,
+        exprb43_step = measure(MM2015.exprb43_step, rhs, t, u, h, Tuple(F), J, v, scaling).time_ns,
         event_indicators = measure(MM2015.event_indicators, problem, a, below, s).time_ns,
         event_indicator_rates = measure(MM2015.event_indicator_rates, problem, a, below, s).time_ns,
     )

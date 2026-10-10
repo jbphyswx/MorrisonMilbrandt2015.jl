@@ -8,8 +8,8 @@ using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 isdefined(@__MODULE__, :ParcelCorpus) || include(joinpath(@__DIR__, "corpus.jl"))
 isdefined(@__MODULE__, :ParcelReference) || include(joinpath(@__DIR__, "reference", "parcel_ode.jl"))
 
-allocated(f, args...) = (f(args...); @allocated f(args...))
-backends() = (("default", MM2015.DefaultThermodynamicsBackend()), ("Thermodynamics.jl", TD.Parameters.ThermodynamicsParameters(Float64)))
+isdefined(@__MODULE__, :TestHelpers) || include(joinpath(@__DIR__, "test_helpers.jl"))
+using .TestHelpers: allocated, backends
 
 const REFERENCE_TOLERANCE = (; rtol = 1e-13, atol_q = 1e-18, atol_T = 1e-11)
 const TIGHT_SCHEME = MM2015.MM2015(; rtol = 1e-10, atol_q = 1e-17, atol_T = 1e-8)
@@ -88,7 +88,7 @@ Test.@testset "MM2015" begin
         for name in (:wbf, :stiff, :ice_only_supersaturated), h in (1.0, 60.0)
             problem, _ = PC.corpus_problem(PC.corpus_case(name), thermo)
             s = MM2015.parcel_state(problem, 0.0, (problem.state.x_liq, problem.state.x_ice, problem.state.T))
-            _, J, _ = MM2015.parcel_linearization(problem, MM2015.active_phases(problem, s, MM2015.below_triple(problem, s)), s)
+            (; J) = MM2015.parcel_linearization(problem, MM2015.active_phases(problem, s, MM2015.below_triple(problem, s)), s)
             push!(matrices, h .* reshape(collect(J), 3, 3))
         end
         setprecision(BigFloat, 512) do
@@ -112,15 +112,15 @@ Test.@testset "MM2015" begin
             problem, _ = PC.corpus_problem(PC.corpus_case(name), backend; basis)
             t = 3.0
             u = (problem.state.x_liq + 1e-6, problem.state.x_ice + 1e-6, problem.state.T - 0.2)
-            F, J, v = MM2015.parcel_linearization(problem, a, MM2015.parcel_state(problem, t, u))
+            (; F, J, v) = MM2015.parcel_linearization(problem, a, MM2015.parcel_state(problem, t, u))
             rhs = MM2015.ParcelRHS(problem, a)
-            Test.@test all(isapprox.(F, PR.rhs(PR.Nonlinear(problem), PR.Active(a.liquid, a.ice), t, collect(u)); rtol = 1e-13, atol = 1e-25))
+            Test.@test all(isapprox.(Tuple(F), PR.rhs(PR.Nonlinear(problem), PR.Active(a.liquid, a.ice), t, collect(u)); rtol = 1e-13, atol = 1e-25))
             for (c, step) in zip(1:3, (1e-7, 1e-7, 1e-3))
                 e = ntuple(k -> k == c ? step : 0.0, 3)
-                column = (rhs(t, u .+ e) .- rhs(t, u .- e)) ./ (2step)
+                column = (Tuple(rhs(t, u .+ e)) .- Tuple(rhs(t, u .- e))) ./ (2step)
                 Test.@test maximum(abs.(column .- J[(3c - 2):(3c)])) ≤ 1e-6 * maximum(abs, column)
             end
-            fd_v = (rhs(t + 1e-3, u) .- rhs(t - 1e-3, u)) ./ 2e-3
+            fd_v = (Tuple(rhs(t + 1e-3, u)) .- Tuple(rhs(t - 1e-3, u))) ./ 2e-3
             Test.@test maximum(abs.(fd_v .- v)) ≤ 1e-6 * maximum(abs, fd_v)
         end
     end
@@ -137,8 +137,8 @@ Test.@testset "MM2015" begin
             h = Δt / N
             u = u0
             for n in 0:(N - 1)
-                F, J, v = MM2015.parcel_linearization(problem, a, MM2015.parcel_state(problem, n * h, u))
-                Δu, _ = MM2015.exprb43_step(MM2015.ParcelRHS(problem, a), n * h, u, h, F, J, v, MM2015.balancing(J))
+                (; F, J, v) = MM2015.parcel_linearization(problem, a, MM2015.parcel_state(problem, n * h, u))
+                Δu, _ = MM2015.exprb43_step(MM2015.ParcelRHS(problem, a), n * h, u, h, Tuple(F), J, v, MM2015.balancing(J))
                 u = u .+ Δu
             end
             return abs(u[3] - reference.u[end][3])
@@ -238,7 +238,7 @@ Test.@testset "MM2015" begin
             problem, Δt = PC.corpus_problem(case, thermo)
             S_brent = MM2015.tendencies(MM2015.MM2015(), problem, Δt)
             S_rs = Test.@inferred MM2015.tendencies(scheme, problem, Δt)
-            Test.@test all(isapprox.(S_rs, S_brent; rtol = 1e-9, atol = 1e-22))
+            Test.@test all(isapprox(S_rs[phase], S_brent[phase]; rtol = 1e-9, atol = 1e-22) for phase in (:liq, :ice))
             Test.@test allocated(MM2015.tendencies, scheme, problem, Δt) == 0
         end
     end
@@ -248,7 +248,7 @@ Test.@testset "MM2015" begin
         Test.@test_throws ErrorException MM2015.tendencies(MM2015.MM2015(; max_steps = 2, rtol = 1e-12), problem, Δt)
         problem32, Δt32 = PC.corpus_problem(PC.corpus_case(:wbf), thermo; FT = Float32)
         Test.@test_throws ArgumentError MM2015.tendencies(MM2015.MM2015(), problem32, Δt32)
-        Test.@test MM2015.tendencies(MM2015.MM2015(), problem, 0.0) == (0.0, 0.0)
+        Test.@test MM2015.tendencies(MM2015.MM2015(), problem, 0.0) == (; liq = 0.0, ice = 0.0)
     end
 
     Test.@testset "trajectory: steps, rates, and states" begin
@@ -301,7 +301,7 @@ Test.@testset "MM2015" begin
         scheme = MM2015.MM2015{FT}()
         for name in (:wbf, :activation_ascent, :freezing_level)
             problem, Δt = PC.corpus_problem(PC.corpus_case(name), backend; basis, FT)
-            Test.@test Test.@inferred(MM2015.tendencies(scheme, problem, Δt)) isa NTuple{2, FT}
+            Test.@test Test.@inferred(MM2015.tendencies(scheme, problem, Δt)) isa NamedTuple{(:liq, :ice), Tuple{FT, FT}}
             Test.@test allocated(MM2015.tendencies, scheme, problem, Δt) == 0
         end
     end

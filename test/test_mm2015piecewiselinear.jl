@@ -5,8 +5,8 @@ using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 
 isdefined(@__MODULE__, :ParcelCorpus) || include(joinpath(@__DIR__, "corpus.jl"))
 
-allocated(f, args...) = (f(args...); @allocated f(args...))
-backends() = (("default", MM2015.DefaultThermodynamicsBackend()), ("Thermodynamics.jl", TD.Parameters.ThermodynamicsParameters(Float64)))
+isdefined(@__MODULE__, :TestHelpers) || include(joinpath(@__DIR__, "test_helpers.jl"))
+using .TestHelpers: allocated, backends
 
 Test.@testset "MM2015PiecewiseLinear" begin
     PC = ParcelCorpus
@@ -29,7 +29,7 @@ Test.@testset "MM2015PiecewiseLinear" begin
         tr = MM2015.trajectory(PL, problem, Δt)
         k = tr.context
         a = MM2015.ActivePhases(liquid, ice)
-        _, τ, A_δ, A_δi = MM2015.relaxation(k, a)
+        (; τ, A_δ, A_δi) = MM2015.relaxation(k, a)
         first_segment = first(tr.segments)
         Test.@test first_segment.event == MM2015.Equilibrium
         Test.@test first_segment.duration == τ
@@ -41,7 +41,8 @@ Test.@testset "MM2015PiecewiseLinear" begin
     Test.@testset "one-phase step without events: PL − FixedT = (δ₀ − δ_eq) τ e^{−Δt/τ} / (τ_l Γ_l Δt): $name" for name in (:warm_updraft, :stiff, :sluggish)
         problem, Δt = PC.corpus_problem(PC.corpus_case(name), thermo)
         k = MM2015.coefficients(problem)
-        _, τ, A_c, _ = MM2015.relaxation(k, MM2015.ActivePhases(true, false))
+        relaxation = MM2015.relaxation(k, MM2015.ActivePhases(true, false))
+        τ, A_c = relaxation.τ, relaxation.A_δ
         expected = τ < Δt ? (k.δ - A_c * τ) * τ * exp(-Δt / τ) / (k.τ_l * k.Γ_l * Δt) : NaN
         S_pl, S_fixed = MM2015.tendencies(PL, problem, Δt), MM2015.tendencies(FixedT, problem, Δt)
         if τ < Δt
@@ -54,7 +55,7 @@ Test.@testset "MM2015PiecewiseLinear" begin
     Test.@testset "zero equilibrium supersaturation is an ordinary state" begin
         base = MM2015.coefficients(first(PC.corpus_problem(PC.corpus_case(:warm_updraft), thermo)))
         k = MM2015.Coefficients(base.T, base.p, base.x_l, 0.0, base.x_sl, base.x_si, 2e-6, 2e-6 + base.Δ, base.Γ_l, base.Γ_i, base.α, base.τ_l, base.τ_i, 0.0, false)
-        Δx_l, Δx_i = MM2015.evolve(PL, k, 60.0, MM2015.NoRecorder())
+        (; Δx_l, Δx_i) = MM2015.evolve(PL, k, 60.0, MM2015.NoRecorder())
         Test.@test isfinite(Δx_l) && Δx_l > 0
         Test.@test Δx_i == 0
     end
@@ -71,7 +72,7 @@ Test.@testset "MM2015PiecewiseLinear" begin
 
     Test.@testset "Δt = 0" begin
         problem, _ = PC.corpus_problem(PC.corpus_case(:wbf), thermo)
-        Test.@test MM2015.tendencies(PL, problem, 0.0) == (0.0, 0.0)
+        Test.@test MM2015.tendencies(PL, problem, 0.0) == (; liq = 0.0, ice = 0.0)
     end
 
     Test.@testset "$bname, $FT, $(nameof(typeof(basis))): inferred and allocation-free" for (bname, backend) in (
@@ -83,10 +84,10 @@ Test.@testset "MM2015PiecewiseLinear" begin
 
         for name in (:wbf, :activation_ascent, :dual_depletion)
             problem, Δt = PC.corpus_problem(PC.corpus_case(name), backend; basis, FT)
-            Test.@test Test.@inferred(MM2015.tendencies(PL, problem, Δt)) isa NTuple{2, FT}
+            Test.@test Test.@inferred(MM2015.tendencies(PL, problem, Δt)) isa NamedTuple{(:liq, :ice), Tuple{FT, FT}}
             Test.@test allocated(MM2015.tendencies, PL, problem, Δt) == 0
             k = MM2015.coefficients(problem)
-            Test.@test Test.@inferred(MM2015.tendencies(PL, k, Δt)) isa NTuple{2, FT}
+            Test.@test Test.@inferred(MM2015.tendencies(PL, k, Δt)) isa NamedTuple{(:liq, :ice), Tuple{FT, FT}}
             Test.@test allocated(MM2015.tendencies, PL, k, Δt) == 0
         end
     end

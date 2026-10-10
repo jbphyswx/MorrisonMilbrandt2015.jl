@@ -31,6 +31,11 @@ Thresholds
 
 ## Rates
 
+`tendencies` returns a named tuple with `.liq` and `.ice` fields, in kg kg⁻¹ s⁻¹ in the
+problem's moisture basis. For example, `rates = tendencies(scheme, problem, Δt)` gives
+`rates.liq` for condensation or evaporation and `rates.ice` for deposition or sublimation.
+The recorded step exposes the same named rates as `trajectory(scheme, problem, Δt).rates`.
+
 ```@docs
 tendencies
 validate

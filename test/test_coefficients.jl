@@ -6,7 +6,8 @@ using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 isdefined(@__MODULE__, :ParcelCorpus) || include(joinpath(@__DIR__, "corpus.jl"))
 isdefined(@__MODULE__, :ParcelReference) || include(joinpath(@__DIR__, "reference", "parcel_ode.jl"))
 
-allocated(f, args...) = (f(args...); @allocated f(args...))
+isdefined(@__MODULE__, :TestHelpers) || include(joinpath(@__DIR__, "test_helpers.jl"))
+using .TestHelpers: allocated, backends
 
 """Centered difference of `δ` along the parcel-model flow with active phases `a`, at `t = 0`."""
 function dδdt_along_flow(model, a, h)
@@ -21,10 +22,6 @@ f_of(k, l, i) = k.A_l - (l ? k.δ / k.τ_l : 0.0) - (i ? k.α * k.δ_i / (k.τ_i
 
 const CASES = (:warm_updraft, :wbf, :ice_subliming_liquid_growing, :ice_only_supersaturated, :activation_moistening, :freezing_level, :float_scale_near_freeze)
 const BASES = (MM2015.SpecificHumidity(), MM2015.DryAirMixingRatio())
-
-function backends()
-    return (("default", MM2015.DefaultThermodynamicsBackend()), ("Thermodynamics.jl", TD.Parameters.ThermodynamicsParameters(Float64)))
-end
 
 Test.@testset "Coefficients" begin
     PC, PR = ParcelCorpus, ParcelReference

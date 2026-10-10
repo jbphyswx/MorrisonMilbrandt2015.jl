@@ -191,10 +191,10 @@ Increment `Δu` of one exprb43 step of length `h` for `u′ = rhs(t, u)` from `(
     half = phi_functions(J .* (h / 2), scaling)
     _, φ₁, φ₂, φ₃, φ₄ = phi_double(half)
     ΔU₂ = (h / 2) .* mat_vec(half[2], F) .+ (h^2 / 4) .* mat_vec(half[3], v)
-    D₂ = rhs(t + h / 2, u .+ ΔU₂) .- F .- mat_vec(J, ΔU₂) .- (h / 2) .* v
+    D₂ = Tuple(rhs(t + h / 2, u .+ ΔU₂)) .- F .- mat_vec(J, ΔU₂) .- (h / 2) .* v
     base = h .* mat_vec(φ₁, F) .+ h^2 .* mat_vec(φ₂, v)
     ΔU₃ = base .+ h .* mat_vec(φ₁, D₂)
-    D₃ = rhs(t + h, u .+ ΔU₃) .- F .- mat_vec(J, ΔU₃) .- h .* v
+    D₃ = Tuple(rhs(t + h, u .+ ΔU₃)) .- F .- mat_vec(J, ΔU₃) .- h .* v
     φ₃D = mat_vec(φ₃, 16 .* D₂ .- 2 .* D₃)
     φ₄D = mat_vec(φ₄, 12 .* D₃ .- 48 .* D₂)
     return base .+ h .* (φ₃D .+ φ₄D), h .* φ₄D

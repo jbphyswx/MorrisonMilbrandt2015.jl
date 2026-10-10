@@ -43,7 +43,7 @@ struct Trajectory{FT, S, C, VS <: AbstractVector{<:Segment{FT}}}
     context::C
     Δt::FT
     segments::VS
-    rates::NTuple{2, FT}
+    rates::NamedTuple{(:liq, :ice), Tuple{FT, FT}}
 end
 
 """
@@ -55,6 +55,6 @@ recorded step.
 function state_at(trajectory::Trajectory{FT, <:FrozenCoefficientScheme}, t::Real) where {FT}
     (; scheme, context, segments) = trajectory
     segment = segments[something(findlast(s -> s.t ≤ t, segments), firstindex(segments))]
-    δ, δ_i, dx_l, dx_i = advance(scheme, context, segment.active, segment.δ, segment.δ_i, FT(t) - segment.t)
-    return (; δ, δ_i, x_l = segment.x_l + dx_l, x_i = segment.x_i + dx_i, T = segment.T)
+    (; δ, δ_i, Δx_l, Δx_i) = advance(scheme, context, segment.active, segment.δ, segment.δ_i, FT(t) - segment.t)
+    return (; δ, δ_i, x_l = segment.x_l + Δx_l, x_i = segment.x_i + Δx_i, T = segment.T)
 end

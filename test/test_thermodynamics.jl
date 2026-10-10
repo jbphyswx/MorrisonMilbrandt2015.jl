@@ -3,21 +3,15 @@ using ClimaParams: ClimaParams
 using Thermodynamics: Thermodynamics as TD
 using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 
+isdefined(@__MODULE__, :TestHelpers) || include(joinpath(@__DIR__, "test_helpers.jl"))
+using .TestHelpers: allocated, backends
+
 const TP = TD.Parameters
 const PHASES = (MM2015.Liquid(), MM2015.Ice())
 const TEMPERATURES = (200.0, 230.0, 250.0, 273.16, 285.0, 310.0)
 const PRESSURES = (2.5e4, 5.0e4, 8.0e4, 1.0e5)
 
 centered(f, x, h) = (f(x + h) - f(x - h)) / (2h)
-
-allocated(f, args...) = (f(args...); @allocated f(args...))
-
-function backends()
-    return (
-        ("default", MM2015.DefaultThermodynamicsBackend()),
-        ("Thermodynamics.jl", TP.ThermodynamicsParameters(Float64)),
-    )
-end
 
 Test.@testset "Thermodynamics backends" begin
     Test.@testset "$name: Clausius–Clapeyron with the backend's own latent heat" for (name, thermo) in backends()

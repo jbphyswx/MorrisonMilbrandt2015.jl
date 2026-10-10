@@ -72,7 +72,7 @@ function check_against_reference(problem, Δt, S_ref, label)
     scheme = MM2015.MM2015()
     S = MM2015.tendencies(scheme, problem, Δt)
     bound = 10 * (scheme.rtol * maximum(abs, S_ref) + scheme.atol_q / Δt)
-    check(maximum(abs.(S .- S_ref)) ≤ bound, "$label: MM2015 against the reference at Δt = $Δt s")
+    check(maximum(abs.(Tuple(S) .- S_ref)) ≤ bound, "$label: MM2015 against the reference at Δt = $Δt s")
 end
 
 """Liquid and ice changes of the reference solution of `problem` over each step in `Δts`, each checked against `MM2015`."""
@@ -103,7 +103,7 @@ function figure_regime_map()
     for regime in REGIMES
         problem = problem_of(regime)
         S = MM2015.tendencies(MM2015.MM2015FixedT(), problem, 1e-3)
-        check(sign.(S) == sign.(initial_rates(problem)), "regime map: rates at the start of $(regime.name)")
+        check(sign.(Tuple(S)) == sign.(initial_rates(problem)), "regime map: rates at the start of $(regime.name)")
     end
     return CM.with_theme(MM2015.figure_theme()) do
         figure = CM.Figure(; size = (760, 520))
@@ -215,10 +215,10 @@ struct WithoutEvents end
 function MM2015.tendencies(::WithoutEvents, problem::MM2015.MM2015Problem, Δt)
     k = MM2015.coefficients(problem)
     a = MM2015.active_phases(k, k.δ, k.δ_i, k.x_l, k.x_i)
-    inv_τ, τ, A_δ, A_δi = MM2015.relaxation(k, a)
-    _, _, I, I_i = MM2015.frozen_evolution(k.δ, k.δ_i, inv_τ, τ, A_δ, A_δi, Δt)
-    Δx_l, Δx_i = MM2015.condensate_increments(k, a, I, I_i)
-    return Δx_l / Δt, Δx_i / Δt
+    (; inv_τ, τ, A_δ, A_δi) = MM2015.relaxation(k, a)
+    (; I, I_i) = MM2015.frozen_evolution(k.δ, k.δ_i, inv_τ, τ, A_δ, A_δi, Δt)
+    (; Δx_l, Δx_i) = MM2015.condensate_increments(k, a, I, I_i)
+    return (; liq = Δx_l / Δt, ice = Δx_i / Δt)
 end
 
 """Legend groups of a step-change panel: `phases` as `(label, phase)`, `labels` by line style, and the guides `(element, label)`."""
@@ -246,10 +246,11 @@ function figure_limits()
         problem = problem_of(regime)
         k = MM2015.coefficients(problem)
         S_fixed, S_events = MM2015.tendencies(variants[1], problem, 0.1), MM2015.tendencies(WithoutEvents(), problem, 0.1)
-        check(all(isapprox.(S_fixed, S_events; rtol = 1e-12)), "limits, $(regime.name): Appendix C without events equals FixedT before the first event")
+        check(all(isapprox(S_fixed[phase], S_events[phase]; rtol = 1e-12) for phase in (:liq, :ice)),
+            "limits, $(regime.name): Appendix C without events equals FixedT before the first event")
         S_unit = MM2015.tendencies(WithoutLatentHeating(), problem, 1e-6)
         S_bare = initial_rates(problem) .* (k.Γ_l, k.Γ_i)
-        check(all(isapprox.(S_unit, S_bare; rtol = 1e-5)), "limits, $(regime.name): initial rates without latent heating are δ/τ")
+        check(all(isapprox.(Tuple(S_unit), S_bare; rtol = 1e-5)), "limits, $(regime.name): initial rates without latent heating are δ/τ")
     end
     return CM.with_theme(MM2015.figure_theme()) do
         figure = CM.Figure(; size = (1100, 500), figure_padding = (6, 10, 6, 6))
@@ -306,7 +307,7 @@ function figure_forcing()
 end
 
 """Largest relative difference of the mean rates `S` from `S_ref`, relative to the larger reference rate; `NaN` when they are equal."""
-rate_error(S, S_ref) = (e = maximum(abs.(S .- S_ref)) / maximum(abs, S_ref); iszero(e) ? NaN : e)
+rate_error(S, S_ref) = (e = maximum(abs.(Tuple(S) .- S_ref)) / maximum(abs, S_ref); iszero(e) ? NaN : e)
 
 # how accurate each scheme is
 function figure_accuracy()

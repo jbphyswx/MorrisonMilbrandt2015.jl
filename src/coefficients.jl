@@ -15,34 +15,38 @@
 @inline basis_density(::DryAirMixingRatio, ρ, q_d) = q_d * ρ
 
 """
-    basis_saturation(basis, s::PhaseSaturation, q_d) -> (x_s, dx_s_dT, dx_s_dp, dx_s_dxt)
+    basis_saturation(basis, s::PhaseSaturation, q_d) -> (; x_s, dx_s_dT, dx_s_dp, dx_s_dxt)
 
 Saturation humidity in the basis and its derivatives with respect to temperature, pressure, and
 total water.
 """
-@inline basis_saturation(::SpecificHumidity, s::PhaseSaturation, q_d) = (q_d * s.r, q_d * s.dr_dT, q_d * s.dr_dp, -s.r)
-@inline basis_saturation(::DryAirMixingRatio, s::PhaseSaturation, _) = (s.r, s.dr_dT, s.dr_dp, zero(s.r))
+@inline basis_saturation(::SpecificHumidity, s::PhaseSaturation, q_d) =
+    (; x_s = q_d * s.r, dx_s_dT = q_d * s.dr_dT, dx_s_dp = q_d * s.dr_dp, dx_s_dxt = -s.r)
+@inline basis_saturation(::DryAirMixingRatio, s::PhaseSaturation, _) =
+    (; x_s = s.r, dx_s_dT = s.dr_dT, dx_s_dp = s.dr_dp, dx_s_dxt = zero(s.r))
 
 """
-    basis_saturation_second(basis, s::PhaseSaturation, q_d) -> (x_s_TT, x_s_Tp, x_s_Txt)
+    basis_saturation_second(basis, s::PhaseSaturation, q_d) -> (; x_s_TT, x_s_Tp, x_s_Txt)
 
 Second derivatives of the saturation humidity in the basis: `∂²/∂T²`, `∂²/∂T∂p`, and `∂²/∂T∂x_t`.
 """
-@inline basis_saturation_second(::SpecificHumidity, s::PhaseSaturation, q_d) = (q_d * s.d2r_dT2, q_d * s.d2r_dTdp, -s.dr_dT)
-@inline basis_saturation_second(::DryAirMixingRatio, s::PhaseSaturation, _) = (s.d2r_dT2, s.d2r_dTdp, zero(s.r))
+@inline basis_saturation_second(::SpecificHumidity, s::PhaseSaturation, q_d) =
+    (; x_s_TT = q_d * s.d2r_dT2, x_s_Tp = q_d * s.d2r_dTdp, x_s_Txt = -s.dr_dT)
+@inline basis_saturation_second(::DryAirMixingRatio, s::PhaseSaturation, _) =
+    (; x_s_TT = s.d2r_dT2, x_s_Tp = s.d2r_dTdp, x_s_Txt = zero(s.r))
 
 """Derivative of the saturation humidity `x_s` in the basis with respect to the basis total water."""
 @inline saturation_total_water_derivative(::SpecificHumidity, x_s, q_d) = -x_s / q_d
 @inline saturation_total_water_derivative(::DryAirMixingRatio, x_s, _) = zero(x_s)
 
 """
-    total_water_derivatives(basis, q_d, q_l, q_i) -> (dq_t, dq_l, dq_i)
+    total_water_derivatives(basis, q_d, q_l, q_i) -> (; dq_t, dq_l, dq_i)
 
 Derivatives of the specific humidities with respect to the total water of the basis, at fixed liquid
 and ice of the basis.
 """
-@inline total_water_derivatives(::SpecificHumidity, q_d, _, _) = (one(q_d), zero(q_d), zero(q_d))
-@inline total_water_derivatives(::DryAirMixingRatio, q_d, q_l, q_i) = (q_d^2, -q_d * q_l, -q_d * q_i)
+@inline total_water_derivatives(::SpecificHumidity, q_d, _, _) = (; dq_t = one(q_d), dq_l = zero(q_d), dq_i = zero(q_d))
+@inline total_water_derivatives(::DryAirMixingRatio, q_d, q_l, q_i) = (; dq_t = q_d^2, dq_l = -q_d * q_l, dq_i = -q_d * q_i)
 
 """Derivative of the basis heat capacity with respect to the basis total water, from that of `c_pm`."""
 @inline basis_heat_capacity_derivative(::SpecificHumidity, dc_pm, _, _) = dc_pm
@@ -99,10 +103,18 @@ end
     ThermodynamicInputs(; x_sl, x_si, dx_sl_dT, dx_si_dT, e_sl, L_v, L_s, c_pm, ρ, T_triple)
 
 Thermodynamics of the parcel at the start of a step, from the host model, in the moisture basis of the
-problem: saturation humidities over liquid and ice [kg kg⁻¹] and their temperature derivatives
-[kg kg⁻¹ K⁻¹], saturation vapor pressure over liquid `e_sl` [Pa], latent heats of vaporization and
-sublimation [J kg⁻¹], moist-air isobaric heat capacity `c_pm` [J kg⁻¹ K⁻¹] and density `ρ` [kg m⁻³],
-and the triple-point temperature [K].
+problem:
+
+- `x_sl`, `x_si`: saturation humidities over liquid and ice [kg kg⁻¹] at the parcel's temperature
+  and pressure, `x_s = q_d ε e_s/(p − e_s)` in specific humidity and `ε e_s/(p − e_s)` in dry-air
+  mixing ratio, with `ε = R_d/R_v` and `q_d` the dry-air fraction;
+- `dx_sl_dT`, `dx_si_dT`: their temperature derivatives at constant pressure and total water
+  [kg kg⁻¹ K⁻¹], `x_s p L/((p − e_s) R_v T²)` with `L` the latent heat of the phase;
+- `e_sl`: saturation vapor pressure over liquid [Pa];
+- `L_v`, `L_s`: latent heats of vaporization and sublimation [J kg⁻¹];
+- `c_pm`: moist-air isobaric heat capacity [J kg⁻¹ K⁻¹];
+- `ρ`: moist-air density [kg m⁻³];
+- `T_triple`: triple-point temperature [K].
 """
 struct ThermodynamicInputs{FT}
     x_sl::FT
@@ -134,10 +146,10 @@ ThermodynamicInputs(; x_sl, x_si, dx_sl_dT, dx_si_dT, e_sl, L_v, L_s, c_pm, ρ, 
     q_i = specific_humidity(basis, x_ice, q_d)
     liquid = saturation(thermo, T, p, Liquid())
     ice = saturation(thermo, T, p, Ice())
-    x_sl, dx_sl_dT, _, _ = basis_saturation(basis, liquid, q_d)
-    x_si, dx_si_dT, _, _ = basis_saturation(basis, ice, q_d)
+    liquid_basis = basis_saturation(basis, liquid, q_d)
+    ice_basis = basis_saturation(basis, ice, q_d)
     return ThermodynamicInputs{FT}(
-        x_sl, x_si, dx_sl_dT, dx_si_dT, liquid.e, liquid.L, ice.L,
+        liquid_basis.x_s, ice_basis.x_s, liquid_basis.dx_s_dT, ice_basis.dx_s_dT, liquid.e, liquid.L, ice.L,
         cp_m(thermo, q_t, q_l, q_i), air_density(thermo, T, p, q_t, q_l, q_i), T_triple(thermo, FT),
     )
 end

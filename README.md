@@ -30,8 +30,8 @@ problem = MM2015Problem(
     MM2015Forcing(-5.0, 0.0, 0.0),                      # dp/dt [Pa s⁻¹], dT/dt [K s⁻¹], dq_v/dt [s⁻¹]
 )
 validate(problem, 300.0)
-tendencies(MM2015FixedT(), problem, 300.0)  # (-6.67e-7, 1.20e-6) kg kg⁻¹ s⁻¹
-tendencies(MM2015(), problem, 300.0)        # (-6.67e-7, 1.21e-6) kg kg⁻¹ s⁻¹
+tendencies(MM2015FixedT(), problem, 300.0)  # (liq = -6.67e-7, ice = 1.20e-6) kg kg⁻¹ s⁻¹
+tendencies(MM2015(), problem, 300.0)        # (liq = -6.67e-7, ice = 1.21e-6) kg kg⁻¹ s⁻¹
 ```
 
 The parcel sits between ice and liquid saturation at 261 K and rises at about 0.5 m s⁻¹. Its liquid

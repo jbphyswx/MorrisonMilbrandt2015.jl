@@ -34,11 +34,11 @@ julia> problem = MM2015Problem(
 
 julia> validate(problem, 300.0)
 
-julia> round.(tendencies(MM2015FixedT(), problem, 300.0); sigdigits = 3)
-(-6.67e-7, 1.2e-6)
+julia> map(x -> round(x; sigdigits = 3), tendencies(MM2015FixedT(), problem, 300.0))
+(liq = -6.67e-7, ice = 1.2e-6)
 
-julia> round.(tendencies(MM2015(), problem, 300.0); sigdigits = 3)
-(-6.67e-7, 1.21e-6)
+julia> map(x -> round(x; sigdigits = 3), tendencies(MM2015(), problem, 300.0))
+(liq = -6.67e-7, ice = 1.21e-6)
 ```
 
 The parcel sits between ice and liquid saturation at 261 K and rises at about 0.5 m s⁻¹. Its liquid

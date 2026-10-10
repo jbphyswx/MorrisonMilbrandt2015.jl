@@ -49,7 +49,7 @@ over ice, for the time `t`; with no phase active, both supersaturations change a
 end
 
 """
-    evolve(scheme, k, Δt, recorder) -> (Δx_l, Δx_i)
+    evolve(scheme, k, Δt, recorder) -> (; Δx_l, Δx_i)
 
 Liquid and ice increments over `[0, Δt]` of the frozen-coefficient dynamics of `k`, advanced by
 `scheme` from each event to the next, with the state rounded by the thresholds of `scheme` at the start
@@ -73,13 +73,19 @@ of each segment. Each segment is passed to `recorder`.
         remaining = Δt - t
         if iszero(x_l) && iszero(x_i) && stays_subsaturated(k, δ, δ_i, remaining)
             record!(recorder, t, remaining, ActivePhases(false, false), x_l, x_i, k.T, δ, δ_i, EndOfStep)
-            return Δx_l, Δx_i
+            return (; Δx_l, Δx_i)
         end
         a = active_phases(k, δ, δ_i, x_l, x_i)
-        s, kind, δ_next, δ_i_next, dx_l, dx_i = segment(scheme, k, a, δ, δ_i, x_l, x_i, remaining)
+        next = segment(scheme, k, a, δ, δ_i, x_l, x_i, remaining)
+        s, kind = next.duration, next.event
+        δ_next, δ_i_next = next.δ, next.δ_i
+        dx_l, dx_i = next.Δx_l, next.Δx_i
         kind == LiquidSaturation && (δ_next = zero(FT))
         kind == IceSaturation && (δ_i_next = zero(FT))
-        kind == Equilibrium && ((δ_next, δ_i_next) = equilibrium_supersaturations(k, a))
+        if kind == Equilibrium
+            equilibrium = equilibrium_supersaturations(k, a)
+            δ_next, δ_i_next = equilibrium.δ, equilibrium.δ_i
+        end
         kind == LiquidExhausted && (dx_l = -x_l)
         kind == IceExhausted && (dx_i = -x_i)
         record!(recorder, t, s, a, x_l, x_i, k.T, δ, δ_i, kind)
@@ -89,7 +95,7 @@ of each segment. Each segment is passed to `recorder`.
         Δx_l += dx_l
         Δx_i += dx_i
         t += s
-        kind == EndOfStep && return Δx_l, Δx_i
+        kind == EndOfStep && return (; Δx_l, Δx_i)
     end
     throw_too_many_events(scheme)
 end

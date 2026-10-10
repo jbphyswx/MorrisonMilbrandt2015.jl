@@ -16,11 +16,11 @@ Test.@testset "Appendix C equations on frozen coefficients" begin
     for name in (:wbf, :ice_only_supersaturated, :ice_subliming_liquid_growing, :activation_ascent), a in ACTIVE_SETS
         problem, _ = ParcelCorpus.corpus_problem(ParcelCorpus.corpus_case(name), thermo)
         k = MM2015.coefficients(problem)
-        inv_τ, τ, A_δ, A_δi = MM2015.relaxation(k, a)
+        (; inv_τ, τ, A_δ, A_δi) = MM2015.relaxation(k, a)
         t = 7.0
         evolution(s) = MM2015.frozen_evolution(k.δ, k.δ_i, inv_τ, τ, A_δ, A_δi, s)
-        δ_of(s) = evolution(s)[1]
-        δ_i_of(s) = evolution(s)[2]
+        δ_of(s) = evolution(s).δ
+        δ_i_of(s) = evolution(s).δ_i
 
         Test.@testset "$name, $a: relaxation time is the inverse of the relaxation rate" begin
             Test.@test iszero(inv_τ) ? isinf(τ) : isapprox(τ * inv_τ, 1; rtol = 4eps())
@@ -33,7 +33,7 @@ Test.@testset "Appendix C equations on frozen coefficients" begin
         end
 
         Test.@testset "$name, $a: C5 integrals equal quadrature" begin
-            _, _, I, I_i = evolution(t)
+            (; I, I_i) = evolution(t)
             Test.@test isapprox(I, simpson(δ_of, 0.0, t); rtol = 1e-12, atol = 1e-20)
             Test.@test isapprox(I_i, simpson(δ_i_of, 0.0, t); rtol = 1e-12, atol = 1e-20)
         end
@@ -47,9 +47,9 @@ Test.@testset "Appendix C equations on frozen coefficients" begin
 
         Test.@testset "$name, $a: C6 and C7 increments integrate the rates" begin
             h = 1e-4
-            increments(s) = MM2015.condensate_increments(k, a, evolution(s)[3], evolution(s)[4])
-            rate_l = (increments(t + h)[1] - increments(t - h)[1]) / (2h)
-            rate_i = (increments(t + h)[2] - increments(t - h)[2]) / (2h)
+            increments(s) = MM2015.condensate_increments(k, a, evolution(s).I, evolution(s).I_i)
+            rate_l = (increments(t + h).Δx_l - increments(t - h).Δx_l) / (2h)
+            rate_i = (increments(t + h).Δx_i - increments(t - h).Δx_i) / (2h)
             Test.@test isapprox(rate_l, a.liquid ? δ_of(t) / (k.τ_l * k.Γ_l) : 0.0; rtol = 1e-7, atol = 1e-18)
             Test.@test isapprox(rate_i, a.ice ? δ_i_of(t) / (k.τ_i * k.Γ_i) : 0.0; rtol = 1e-7, atol = 1e-18)
         end

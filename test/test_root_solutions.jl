@@ -3,6 +3,9 @@
 using Test: Test
 using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 
+isdefined(@__MODULE__, :TestHelpers) || include(joinpath(@__DIR__, "test_helpers.jl"))
+using .TestHelpers: allocated
+
 const PRECISION = 256
 
 """BigFloat precision of the references for inputs of type `FT`."""
@@ -287,7 +290,6 @@ Test.@testset "Depletion times and Lambert W" begin
         end
 
         Test.@testset "$FT inferred and allocation-free" for FT in (Float32, Float64)
-            allocated(f, args...) = (f(args...); @allocated f(args...))
             args_nw = (FT(-1e-5), FT(2e-6), FT(8), FT(8), FT(1e-6), FT(1.25))
             args_wbf = (args_nw..., FT(5e-3), FT(4.8e-3))
             Test.@test Test.@inferred(MM2015.get_t_out_of_q_no_WBF(args_nw...)) isa FT

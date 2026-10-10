@@ -79,6 +79,13 @@ holds the saturation humidities, latent heats, heat capacity, and density passes
 ``\delta_i`` when it holds them more precisely than the difference of the vapor and the saturation
 humidity, and calls `tendencies(MM2015FixedT(), k, Δt)`.
 
+The coefficients split the change of the saturation humidity into its temperature, pressure, and
+total-water parts, so the temperature derivatives are taken at constant pressure and total water,
+and the pressure part follows as ``\partial_p x_{sl} = -x_{sl}/(p - e_{sl})``. A derivative of
+``q_s = e_s/(\rho R_v T)`` at constant density is smaller by the factor
+``(1 - R_v T/L)(p - e_s)/p``, 4 to 8 % on the test states, and with it the rates of the test states
+change by up to 11 %.
+
 ## Result
 
 The mean rates are the summed condensate increments of all segments divided by ``\Delta t``.

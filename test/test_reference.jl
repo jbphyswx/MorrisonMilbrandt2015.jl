@@ -6,6 +6,9 @@ using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 isdefined(@__MODULE__, :ParcelCorpus) || include(joinpath(@__DIR__, "corpus.jl"))
 isdefined(@__MODULE__, :ParcelReference) || include(joinpath(@__DIR__, "reference", "parcel_ode.jl"))
 
+isdefined(@__MODULE__, :TestHelpers) || include(joinpath(@__DIR__, "test_helpers.jl"))
+using .TestHelpers: backends
+
 # atol_q sits above the rounding floor ε·x_v of δ = x_v − x_sl
 const TIGHT = (; rtol = 1e-13, atol_q = 1e-18, atol_T = 1e-11)
 
@@ -52,8 +55,6 @@ function moist_enthalpy(problem, t, u)
     c_p = MM2015.cp_d(thermo, FT) * dry + MM2015.cp_v(thermo, FT) * x_v + MM2015.cp_l(thermo, FT) * x_l + MM2015.cp_i(thermo, FT) * x_i
     return c_p * (T - T_0) + x_v * L_v0 - x_i * L_f0
 end
-
-backends() = (("default", MM2015.DefaultThermodynamicsBackend()), ("Thermodynamics.jl", TD.Parameters.ThermodynamicsParameters(Float64)))
 
 Test.@testset "Reference integrator" begin
     PC = ParcelCorpus

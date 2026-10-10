@@ -15,8 +15,10 @@
     c_pm = cp_m(thermo, q_t, q_l, q_i)
     R_m = gas_constant_air(thermo, q_t, q_l, q_i)
     c_p = basis_heat_capacity(basis, c_pm, q_d)
-    x_sl, xsl_T, xsl_p, xsl_xt = basis_saturation(basis, liquid, q_d)
-    x_si, xsi_T, xsi_p, xsi_xt = basis_saturation(basis, ice, q_d)
+    liquid_basis = basis_saturation(basis, liquid, q_d)
+    ice_basis = basis_saturation(basis, ice, q_d)
+    x_sl, xsl_T, xsl_p, xsl_xt = liquid_basis.x_s, liquid_basis.dx_s_dT, liquid_basis.dx_s_dp, liquid_basis.dx_s_dxt
+    x_si, xsi_T, xsi_p, xsi_xt = ice_basis.x_s, ice_basis.dx_s_dT, ice_basis.dx_s_dp, ice_basis.dx_s_dxt
     return (;
         T, p, x_l, x_i, q_d, q_l, q_i, liquid, ice, c_pm, R_m, c_p, ρc_pm = p * c_pm / (R_m * T), x_v = x_t - x_l - x_i,
         x_sl, xsl_T, xsl_p, xsl_xt, x_si, xsi_T, xsi_p, xsi_xt,
@@ -24,13 +26,13 @@
     )
 end
 
-"""Liquid and ice rates and the temperature tendency at the parcel state `s` with active phases `a`."""
+"""Liquid and ice rates and the temperature tendency `(; liq, ice, T)` at the parcel state `s` with active phases `a`."""
 @inline function parcel_tendencies(problem::MM2015Problem, a::ActivePhases, s)
     (; τ_liq, τ_ice) = problem.timescales
     (; dpdt, dTdt_external) = problem.forcing
     S_l = a.liquid ? (s.x_v - s.x_sl) / (τ_liq * s.Γ_l) : zero(s.x_v)
     S_i = a.ice ? (s.x_v - s.x_si) / (τ_ice * s.Γ_i) : zero(s.x_v)
-    return (S_l, S_i, dTdt_external + dpdt / s.ρc_pm + (s.liquid.L * S_l + s.ice.L * S_i) / s.c_p)
+    return (; liq = S_l, ice = S_i, T = dTdt_external + dpdt / s.ρc_pm + (s.liquid.L * S_l + s.ice.L * S_i) / s.c_p)
 end
 
 """Right side of the parcel model with fixed active phases, called as `rhs(t, u)`."""
@@ -42,7 +44,7 @@ end
 @inline (rhs::ParcelRHS)(t, u) = parcel_tendencies(rhs.problem, rhs.active, parcel_state(rhs.problem, t, u))
 
 """
-    parcel_linearization(problem, a, s) -> (F, J, v)
+    parcel_linearization(problem, a, s) -> (; F, J, v)
 
 Right side `F`, Jacobian `J = ∂F/∂u` (by columns), and `v = ∂F/∂t` of the parcel model with active
 phases `a` at the [`parcel_state`](@ref) `s`.
@@ -50,7 +52,7 @@ phases `a` at the [`parcel_state`](@ref) `s`.
 @inline function parcel_linearization(problem::MM2015Problem{FT}, a::ActivePhases, s) where {FT}
     (; basis, thermo, timescales, forcing) = problem
     F = parcel_tendencies(problem, a, s)
-    S_l, S_i, _ = F
+    S_l, S_i = F.liq, F.ice
     ṗ, F_t = forcing.dpdt, forcing.dx_vap_dt
     c_v, c_l, c_i, c_d = cp_v(thermo, FT), cp_l(thermo, FT), cp_i(thermo, FT), cp_d(thermo, FT)
     Rv, Rd = R_v(thermo, FT), R_d(thermo, FT)
@@ -58,9 +60,11 @@ phases `a` at the [`parcel_state`](@ref) `s`.
     L_v, L_s = s.liquid.L, s.ice.L
     c_p, Q = s.c_p, s.ρc_pm
 
-    xsl_TT, xsl_Tp, xsl_Txt = basis_saturation_second(basis, s.liquid, s.q_d)
-    xsi_TT, xsi_Tp, xsi_Txt = basis_saturation_second(basis, s.ice, s.q_d)
-    dq_t, dq_l, dq_i = total_water_derivatives(basis, s.q_d, s.q_l, s.q_i)
+    liquid_second = basis_saturation_second(basis, s.liquid, s.q_d)
+    ice_second = basis_saturation_second(basis, s.ice, s.q_d)
+    xsl_TT, xsl_Tp, xsl_Txt = liquid_second.x_s_TT, liquid_second.x_s_Tp, liquid_second.x_s_Txt
+    xsi_TT, xsi_Tp, xsi_Txt = ice_second.x_s_TT, ice_second.x_s_Tp, ice_second.x_s_Txt
+    (; dq_t, dq_l, dq_i) = total_water_derivatives(basis, s.q_d, s.q_l, s.q_i)
     dc_pm_dxt = (c_v - c_d) * dq_t + (c_l - c_v) * dq_l + (c_i - c_v) * dq_i
     dR_m_dxt = (Rv - Rd) * dq_t - Rv * (dq_l + dq_i)
     dc_p_dxt = basis_heat_capacity_derivative(basis, dc_pm_dxt, s.c_pm, s.q_d)
@@ -100,16 +104,18 @@ phases `a` at the [`parcel_state`](@ref) `s`.
     dT_T = -ṗ * dQ_dT / Q^2 + (s.liquid.dL_dT * S_l + L_v * dSl[3] + s.ice.dL_dT * S_i + L_s * dSi[3]) / c_p
     dT_t = -ṗ * dQ_dt / Q^2 + (L_v * dSl[4] + L_s * dSi[4]) / c_p - H * dc_p_dxt * F_t / c_p^2
     J = (dSl[1], dSi[1], dT_xl, dSl[2], dSi[2], dT_xi, dSl[3], dSi[3], dT_T)
-    return F, J, (dSl[4], dSi[4], dT_t)
+    v = (dSl[4], dSi[4], dT_t)
+    return (; F, J, v)
 end
 
-"""Time derivatives of `δ` and `δ_i` at the [`parcel_state`](@ref) `s`, from the `tendencies` `(S_l, S_i, dT/dt)`."""
-@inline function supersaturation_rates(problem::MM2015Problem, s, (S_l, S_i, dT))
+"""Time derivatives `(; dδ, dδ_i)` of `δ` and `δ_i` at the [`parcel_state`](@ref) `s`, from [`parcel_tendencies`](@ref)."""
+@inline function supersaturation_rates(problem::MM2015Problem, s, tendencies)
+    S_l, S_i, dT = tendencies.liq, tendencies.ice, tendencies.T
     (; dpdt, dx_vap_dt) = problem.forcing
     dx_v = dx_vap_dt - S_l - S_i
-    return (
-        dx_v - s.xsl_T * dT - s.xsl_p * dpdt - s.xsl_xt * dx_vap_dt,
-        dx_v - s.xsi_T * dT - s.xsi_p * dpdt - s.xsi_xt * dx_vap_dt,
+    return (;
+        dδ = dx_v - s.xsl_T * dT - s.xsl_p * dpdt - s.xsl_xt * dx_vap_dt,
+        dδ_i = dx_v - s.xsi_T * dT - s.xsi_p * dpdt - s.xsi_xt * dx_vap_dt,
     )
 end
 
@@ -137,12 +143,13 @@ A phase without mass forms only when its supersaturation exceeds `thresholds.δ_
 ) where {FT}
     (; x_l, x_i) = s
     δ, δ_i = s.x_v - s.x_sl, s.x_v - s.x_si
-    δ_form, δ_i_form = rounded_supersaturations(s, thresholds)
+    rounded = rounded_supersaturations(s, thresholds)
+    δ_form, δ_i_form = rounded.δ, rounded.δ_i
     ice_interior = below ? (x_i > 0 || δ_i_form > 0) : (x_i > 0 && δ_i < 0)
     liquid = x_l > 0 || δ_form > 0 ||
              (iszero(x_l) && iszero(δ_form) && δ ≥ 0 &&
-              supersaturation_rates(problem, s, parcel_tendencies(problem, ActivePhases(false, ice_interior), s))[1] > 0)
-    ice_saturation_rate() = supersaturation_rates(problem, s, parcel_tendencies(problem, ActivePhases(liquid, false), s))[2]
+              supersaturation_rates(problem, s, parcel_tendencies(problem, ActivePhases(false, ice_interior), s)).dδ > 0)
+    ice_saturation_rate() = supersaturation_rates(problem, s, parcel_tendencies(problem, ActivePhases(liquid, false), s)).dδ_i
     ice = if below
         ice_interior || (iszero(x_i) && iszero(δ_i_form) && δ_i ≥ 0 && ice_saturation_rate() > 0)
     else
@@ -151,10 +158,10 @@ A phase without mass forms only when its supersaturation exceeds `thresholds.δ_
     return ActivePhases(liquid, ice)
 end
 
-"""Supersaturations over liquid and over ice at the [`parcel_state`](@ref) `s`, zero below `thresholds.δ_min` and `thresholds.δ_i_min` in magnitude."""
+"""Supersaturations `(; δ, δ_i)` over liquid and over ice at the [`parcel_state`](@ref) `s`, zero below `thresholds.δ_min` and `thresholds.δ_i_min` in magnitude."""
 @inline function rounded_supersaturations(s, thresholds::Thresholds)
     δ, δ_i = s.x_v - s.x_sl, s.x_v - s.x_si
-    return abs(δ) < thresholds.δ_min ? zero(δ) : δ, abs(δ_i) < thresholds.δ_i_min ? zero(δ_i) : δ_i
+    return (; δ = abs(δ) < thresholds.δ_min ? zero(δ) : δ, δ_i = abs(δ_i) < thresholds.δ_i_min ? zero(δ_i) : δ_i)
 end
 
 """
@@ -176,7 +183,8 @@ active ice above it, `-δ_i` for inactive ice with mass above it; and the signed
     none = -FT(Inf)
     (; x_l, x_i, T) = s
     δ_i = s.x_v - s.x_si
-    δ_form, δ_i_form = rounded_supersaturations(s, thresholds)
+    rounded = rounded_supersaturations(s, thresholds)
+    δ_form, δ_i_form = rounded.δ, rounded.δ_i
     T_tr = T_triple(problem.thermo, FT)
     liquid = a.liquid ? -x_l : δ_form
     ice_mass = a.ice ? -x_i : none
@@ -187,8 +195,8 @@ end
 """Time derivatives of [`event_indicators`](@ref) along the parcel model at the [`parcel_state`](@ref) `s`."""
 @inline function event_indicator_rates(problem::MM2015Problem{FT}, a::ActivePhases, below::Bool, s) where {FT}
     tendencies = parcel_tendencies(problem, a, s)
-    S_l, S_i, dT = tendencies
-    dδ, dδ_i = supersaturation_rates(problem, s, tendencies)
+    S_l, S_i, dT = tendencies.liq, tendencies.ice, tendencies.T
+    (; dδ, dδ_i) = supersaturation_rates(problem, s, tendencies)
     x_i = s.x_i
     liquid = a.liquid ? -S_l : dδ
     ice_mass = a.ice ? -S_i : zero(FT)
@@ -255,7 +263,7 @@ struct StepIndicators{P, FT}
 end
 
 @inline function (m::StepIndicators)(s)
-    Δu, _ = exprb43_step(ParcelRHS(m.problem, m.active), m.t, m.u, s, m.F, m.J, m.v, m.scaling)
+    Δu, _ = exprb43_step(ParcelRHS(m.problem, m.active), m.t, m.u, s, Tuple(m.F), m.J, m.v, m.scaling)
     state = parcel_state(m.problem, m.t + s, first(compensated_add(m.u, m.u_lo, Δu)))
     return event_indicators(m.problem, m.active, m.below, state, m.thresholds)
 end
@@ -311,7 +319,7 @@ end
     k == 1 ? (a.liquid ? LiquidExhausted : LiquidSaturation) : k == 2 ? IceExhausted : k == 3 ? IceSaturation : TripleCrossing
 
 """
-    return_small_condensate(problem, t, u, u_lo, x_min) -> (u, u_lo, r_l, r_i)
+    return_small_condensate(problem, t, u, u_lo, x_min) -> (; u, u_lo, r_l, r_i)
 
 The state `u + u_lo = (x_l, x_i, T)` with liquid and ice below `x_min` returned to the vapor, the
 temperature lowered by their latent heat, and the returned amounts `r_l` and `r_i`.
@@ -319,33 +327,38 @@ temperature lowered by their latent heat, and the returned amounts `r_l` and `r_
 @inline function return_small_condensate(problem::MM2015Problem{FT}, t::FT, u::Vec3{FT}, u_lo::Vec3{FT}, x_min::FT) where {FT}
     x_l, x_i, T = u
     small_l, small_i = zero(FT) < x_l < x_min, zero(FT) < x_i < x_min
-    small_l || small_i || return u, u_lo, zero(FT), zero(FT)
+    small_l || small_i || return (; u, u_lo, r_l = zero(FT), r_i = zero(FT))
     r_l = small_l ? x_l + u_lo[1] : zero(FT)
     r_i = small_i ? x_i + u_lo[2] : zero(FT)
     s = parcel_state(problem, t, u)
     u = (small_l ? zero(FT) : x_l, small_i ? zero(FT) : x_i, T - (s.liquid.L * r_l + s.ice.L * r_i) / s.c_p)
-    return u, (small_l ? zero(FT) : u_lo[1], small_i ? zero(FT) : u_lo[2], u_lo[3]), r_l, r_i
+    u_lo = (small_l ? zero(FT) : u_lo[1], small_i ? zero(FT) : u_lo[2], u_lo[3])
+    return (; u, u_lo, r_l, r_i)
 end
 
 """
+    step_start(scheme, problem, t, u, u_lo, scaling) -> NamedTuple
+
 Start of an integrator step from `(t, u + u_lo)`: the state with the condensate below the threshold of
 `scheme` returned to the vapor, the amounts returned, the parcel state, the active phases, the event
 indicators and their rates, and the linearization with its balancing warm-started from `scaling`.
+Returns the fields `u`, `u_lo`, `r_l`, `r_i`, `state`, `below`, `a`, `g`, `ġ`, `F`, `J`, `v`, and `scaling`.
 """
 @inline function step_start(scheme::MM2015, problem::MM2015Problem{FT}, t::FT, u::Vec3{FT}, u_lo::Vec3{FT}, scaling) where {FT}
     (; thresholds) = scheme
-    u, u_lo, r_l, r_i = return_small_condensate(problem, t, u, u_lo, thresholds.x_min)
+    (; u, u_lo, r_l, r_i) = return_small_condensate(problem, t, u, u_lo, thresholds.x_min)
     state = parcel_state(problem, t, u)
     below = below_triple(problem, state)
     a = active_phases(problem, state, below, thresholds)
-    F, J, v = parcel_linearization(problem, a, state)
+    (; F, J, v) = parcel_linearization(problem, a, state)
     g = event_indicators(problem, a, below, state, thresholds)
     ġ = event_indicator_rates(problem, a, below, state)
-    return u, u_lo, r_l, r_i, state, below, a, g, ġ, F, J, v, balancing(J, scaling)
+    scaling = balancing(J, scaling)
+    return (; u, u_lo, r_l, r_i, state, below, a, g, ġ, F, J, v, scaling)
 end
 
 """
-    evolve(scheme::MM2015, problem, Δt, recorder) -> (Δx_l, Δx_i)
+    evolve(scheme::MM2015, problem, Δt, recorder) -> (; Δx_l, Δx_i)
 
 Liquid and ice increments over `[0, Δt]` of the parcel model, integrated by exprb43 with step-size
 control to the tolerances of `scheme`. When event indicators turn positive in an accepted step, the
@@ -358,7 +371,7 @@ function evolve(scheme::MM2015, problem::MM2015Problem{FT}, Δt::FT, recorder) w
     atol = (atol_q, atol_q, atol_T)
     (; thresholds) = scheme
     t = zero(FT)
-    u, u_lo, r_l, r_i, state, below, a, g, ġ, F, J, v, scaling = step_start(
+    (; u, u_lo, r_l, r_i, state, below, a, g, ġ, F, J, v, scaling) = step_start(
         scheme, problem, t, (problem.state.x_liq, problem.state.x_ice, problem.state.T), (zero(FT), zero(FT), zero(FT)),
         identity_scaling(FT))
     Δx_l, Δx_i = -r_l, -r_i
@@ -366,7 +379,7 @@ function evolve(scheme::MM2015, problem::MM2015Problem{FT}, Δt::FT, recorder) w
     for _ in 1:scheme.max_steps
         h = min(h, Δt - t)
         rhs = ParcelRHS(problem, a)
-        Δu, error_estimate = exprb43_step(rhs, t, u, h, F, J, v, scaling)
+        Δu, error_estimate = exprb43_step(rhs, t, u, h, Tuple(F), J, v, scaling)
         u_next, lo_next = compensated_add(u, u_lo, Δu)
         err = scaled_error(error_estimate, u, u_next, atol, rtol)
         if !(err ≤ 1)
@@ -377,7 +390,7 @@ function evolve(scheme::MM2015, problem::MM2015Problem{FT}, Δt::FT, recorder) w
         state_next = parcel_state(problem, t + h, u_next)
         g_next = event_indicators(problem, a, below, state_next, thresholds)
         if any(>(0), g_next)
-            indicators = StepIndicators(problem, a, below, thresholds, t, u, u_lo, F, J, v, scaling)
+            indicators = StepIndicators(problem, a, below, thresholds, t, u, u_lo, Tuple(F), J, v, scaling)
             k, s, g_event = earliest_fired(g, g_next), h, g_next
             while true
                 # no finer in time than the indicator resolves at its mean rate over (0, s]
@@ -391,7 +404,7 @@ function evolve(scheme::MM2015, problem::MM2015Problem{FT}, Δt::FT, recorder) w
                 g_lo[j] > 0 || break
                 k, s, g_event = j, s_lo, g_lo
             end
-            Δu, _ = exprb43_step(rhs, t, u, s, F, J, v, scaling)
+            Δu, _ = exprb43_step(rhs, t, u, s, Tuple(F), J, v, scaling)
             u_event, lo_event = compensated_add(u, u_lo, Δu)
             ġ_event = event_indicator_rates(problem, a, below, parcel_state(problem, t + s, u_event))
             unfired = map(≤(0), g_event)
@@ -411,10 +424,10 @@ function evolve(scheme::MM2015, problem::MM2015Problem{FT}, Δt::FT, recorder) w
             Δx_l += liquid_exhausted ? -(u[1] + u_lo[1]) : Δu[1]
             Δx_i += ice_exhausted ? -(u[2] + u_lo[2]) : Δu[2]
             t += s
-            t < Δt || return Δx_l, Δx_i
+            t < Δt || return (; Δx_l, Δx_i)
             u_new = (liquid_exhausted ? zero(FT) : u_event[1], ice_exhausted ? zero(FT) : u_event[2], u_event[3])
             lo_new = (liquid_exhausted ? zero(FT) : lo_event[1], ice_exhausted ? zero(FT) : lo_event[2], lo_event[3])
-            u, u_lo, r_l, r_i, state, below, a, g, ġ, F, J, v, scaling = step_start(scheme, problem, t, u_new, lo_new, scaling)
+            (; u, u_lo, r_l, r_i, state, below, a, g, ġ, F, J, v, scaling) = step_start(scheme, problem, t, u_new, lo_new, scaling)
             Δx_l -= r_l
             Δx_i -= r_i
         else
@@ -427,15 +440,15 @@ function evolve(scheme::MM2015, problem::MM2015Problem{FT}, Δt::FT, recorder) w
             Δx_l += Δu[1]
             Δx_i += Δu[2]
             t += h
-            t < Δt || return Δx_l, Δx_i
+            t < Δt || return (; Δx_l, Δx_i)
             if zero(FT) < u_next[1] < thresholds.x_min || zero(FT) < u_next[2] < thresholds.x_min
-                u, u_lo, r_l, r_i, state, below, a, g, ġ, F, J, v, scaling = step_start(scheme, problem, t, u_next, lo_next, scaling)
+                (; u, u_lo, r_l, r_i, state, below, a, g, ġ, F, J, v, scaling) = step_start(scheme, problem, t, u_next, lo_next, scaling)
                 Δx_l -= r_l
                 Δx_i -= r_i
             else
                 u, u_lo = u_next, lo_next
                 state, g, ġ = state_next, g_next, ġ_next
-                F, J, v = parcel_linearization(problem, a, state)
+                (; F, J, v) = parcel_linearization(problem, a, state)
                 scaling = balancing(J, scaling)
             end
         end
@@ -460,8 +473,8 @@ function state_at(trajectory::Trajectory{FT, <:MM2015}, t::Real) where {FT}
     (; context, segments) = trajectory
     segment = segments[something(findlast(r -> r.t ≤ t, segments), firstindex(segments))]
     u = (segment.x_l, segment.x_i, segment.T)
-    F, J, v = parcel_linearization(context, segment.active, parcel_state(context, segment.t, u))
-    Δu, _ = exprb43_step(ParcelRHS(context, segment.active), segment.t, u, FT(t) - segment.t, F, J, v, balancing(J))
+    (; F, J, v) = parcel_linearization(context, segment.active, parcel_state(context, segment.t, u))
+    Δu, _ = exprb43_step(ParcelRHS(context, segment.active), segment.t, u, FT(t) - segment.t, Tuple(F), J, v, balancing(J))
     x_l, x_i, T = u .+ Δu
     s = parcel_state(context, FT(t), (x_l, x_i, T))
     return (; δ = s.x_v - s.x_sl, δ_i = s.x_v - s.x_si, x_l, x_i, T)

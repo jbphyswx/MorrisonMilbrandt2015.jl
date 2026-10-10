@@ -6,8 +6,8 @@ using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 isdefined(@__MODULE__, :ParcelCorpus) || include(joinpath(@__DIR__, "corpus.jl"))
 isdefined(@__MODULE__, :ParcelReference) || include(joinpath(@__DIR__, "reference", "parcel_ode.jl"))
 
-allocated(f, args...) = (f(args...); @allocated f(args...))
-backends() = (("default", MM2015.DefaultThermodynamicsBackend()), ("Thermodynamics.jl", TD.Parameters.ThermodynamicsParameters(Float64)))
+isdefined(@__MODULE__, :TestHelpers) || include(joinpath(@__DIR__, "test_helpers.jl"))
+using .TestHelpers: allocated, backends
 
 const REFERENCE_TOLERANCE = (; rtol = 1e-13, atol_q = 1e-18, atol_T = 1e-11)
 
@@ -150,7 +150,7 @@ Test.@testset "MM2015FixedT" begin
             MM2015.MM2015Timescales(5.0, 1000.0), MM2015.MM2015Forcing(-1.0, 0.0, 0.0))
         k = MM2015.coefficients(problem)
         Test.@test k.δ + k.A_l * 60.0 < 0
-        Test.@test MM2015.tendencies(MM2015.MM2015FixedT(), k, 60.0) == (0.0, 0.0)
+        Test.@test MM2015.tendencies(MM2015.MM2015FixedT(), k, 60.0) == (; liq = 0.0, ice = 0.0)
         tr = MM2015.trajectory(MM2015.MM2015FixedT(), k, 60.0)
         Test.@test length(tr.segments) == 1
         Test.@test only(tr.segments).active == MM2015.ActivePhases(false, false)
@@ -164,9 +164,9 @@ Test.@testset "MM2015FixedT" begin
         evaporating = MM2015.coefficients(first(PC.corpus_problem(PC.corpus_case(:warm_evaporation), thermo)))
         k = with_state(evaporating; x_l = 1e-12)
         scheme = MM2015.MM2015FixedT(; thresholds = MM2015.Thresholds(; x_min = 1e-10))
-        Test.@test MM2015.tendencies(scheme, k, Δt) == (-k.x_l / Δt, 0.0)
+        Test.@test MM2015.tendencies(scheme, k, Δt) == (; liq = -k.x_l / Δt, ice = 0.0)
         Test.@test all(s -> s.event != MM2015.LiquidExhausted, MM2015.trajectory(scheme, k, Δt).segments)
-        Test.@test MM2015.tendencies(MM2015.MM2015FixedT(), k, Δt) == (-k.x_l / Δt, 0.0)
+        Test.@test MM2015.tendencies(MM2015.MM2015FixedT(), k, Δt) == (; liq = -k.x_l / Δt, ice = 0.0)
         Test.@test any(s -> s.event == MM2015.LiquidExhausted, MM2015.trajectory(MM2015.MM2015FixedT(), k, Δt).segments)
 
         near = with_state(evaporating; δ = 1e-10, δ_i = 1e-10 + evaporating.Δ, x_l = 0.0)
@@ -199,7 +199,7 @@ Test.@testset "MM2015FixedT" begin
 
     Test.@testset "Δt = 0" begin
         problem, _ = PC.corpus_problem(PC.corpus_case(:wbf), MM2015.DefaultThermodynamicsBackend())
-        Test.@test MM2015.tendencies(MM2015.MM2015FixedT(), problem, 0.0) == (0.0, 0.0)
+        Test.@test MM2015.tendencies(MM2015.MM2015FixedT(), problem, 0.0) == (; liq = 0.0, ice = 0.0)
     end
 
     Test.@testset "$bname, $FT, $(nameof(typeof(basis))): inferred and allocation-free" for (bname, thermo) in (
@@ -211,10 +211,10 @@ Test.@testset "MM2015FixedT" begin
 
         for name in (:wbf, :activation_ascent, :dual_depletion)
             problem, Δt = PC.corpus_problem(PC.corpus_case(name), thermo; basis, FT)
-            Test.@test Test.@inferred(MM2015.tendencies(MM2015.MM2015FixedT(), problem, Δt)) isa NTuple{2, FT}
+            Test.@test Test.@inferred(MM2015.tendencies(MM2015.MM2015FixedT(), problem, Δt)) isa NamedTuple{(:liq, :ice), Tuple{FT, FT}}
             Test.@test allocated(MM2015.tendencies, MM2015.MM2015FixedT(), problem, Δt) == 0
             k = MM2015.coefficients(problem)
-            Test.@test Test.@inferred(MM2015.tendencies(MM2015.MM2015FixedT(), k, Δt)) isa NTuple{2, FT}
+            Test.@test Test.@inferred(MM2015.tendencies(MM2015.MM2015FixedT(), k, Δt)) isa NamedTuple{(:liq, :ice), Tuple{FT, FT}}
             Test.@test allocated(MM2015.tendencies, MM2015.MM2015FixedT(), k, Δt) == 0
         end
     end

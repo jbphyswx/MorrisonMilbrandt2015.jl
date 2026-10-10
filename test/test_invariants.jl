@@ -5,7 +5,8 @@ using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 
 isdefined(@__MODULE__, :ParcelCorpus) || include(joinpath(@__DIR__, "corpus.jl"))
 
-backends() = (("default", MM2015.DefaultThermodynamicsBackend()), ("Thermodynamics.jl", TD.Parameters.ThermodynamicsParameters(Float64)))
+isdefined(@__MODULE__, :TestHelpers) || include(joinpath(@__DIR__, "test_helpers.jl"))
+using .TestHelpers: backends
 
 Test.@testset "Invariants over the corpus" begin
     PC = ParcelCorpus

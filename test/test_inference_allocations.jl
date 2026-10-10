@@ -5,12 +5,8 @@ using MorrisonMilbrandt2015: MorrisonMilbrandt2015 as MM2015
 
 isdefined(@__MODULE__, :ParcelCorpus) || include(joinpath(@__DIR__, "corpus.jl"))
 
-allocated(f, args...) = (f(args...); @allocated f(args...))
-
-function backends(::Type{FT}) where {FT}
-    default_and_td = (("default", MM2015.DefaultThermodynamicsBackend()), ("Thermodynamics.jl Float64 parameters", TD.Parameters.ThermodynamicsParameters(Float64)))
-    return FT === Float64 ? default_and_td : (default_and_td..., ("Thermodynamics.jl $FT parameters", TD.Parameters.ThermodynamicsParameters(FT)))
-end
+isdefined(@__MODULE__, :TestHelpers) || include(joinpath(@__DIR__, "test_helpers.jl"))
+using .TestHelpers: allocated, backends
 
 Test.@testset "Inference and allocations over the corpus" begin
     PC = ParcelCorpus
@@ -24,7 +20,7 @@ Test.@testset "Inference and allocations over the corpus" begin
                 Test.@test Test.@inferred(MM2015.validate(problem, Δt)) === nothing
                 Test.@test allocated(MM2015.validate, problem, Δt) == 0
                 for scheme in schemes
-                    Test.@test Test.@inferred(MM2015.tendencies(scheme, problem, Δt)) isa NTuple{2, FT}
+                    Test.@test Test.@inferred(MM2015.tendencies(scheme, problem, Δt)) isa NamedTuple{(:liq, :ice), Tuple{FT, FT}}
                     Test.@test allocated(MM2015.tendencies, scheme, problem, Δt) == 0
                     Test.@test Test.@inferred(MM2015.trajectory(scheme, problem, Δt)).rates == MM2015.tendencies(scheme, problem, Δt)
                 end

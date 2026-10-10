@@ -1,24 +1,24 @@
 """
-    tendencies(scheme, problem, Δt) -> (S_liq, S_ice)
-    tendencies(scheme, k::Coefficients, Δt) -> (S_liq, S_ice)
+    tendencies(scheme, problem, Δt) -> (; liq, ice)
+    tendencies(scheme, k::Coefficients, Δt) -> (; liq, ice)
 
 Mean phase-change rates of liquid and ice over the step `Δt` [s], in the moisture basis of
 `problem` [kg kg⁻¹ s⁻¹]. The frozen-coefficient schemes also take [`Coefficients`](@ref), for example
-built from the host model's thermodynamics by [`coefficients`](@ref). `Δt = 0` gives `(0, 0)`.
+built from the host model's thermodynamics by [`coefficients`](@ref). `Δt = 0` gives `(; liq = 0, ice = 0)`.
 """
 function tendencies(scheme::FrozenCoefficientScheme, k::Coefficients{FT}, Δt::FT) where {FT}
-    iszero(Δt) && return (zero(FT), zero(FT))
-    Δx_l, Δx_i = evolve(scheme, k, Δt, NoRecorder())
-    return (Δx_l / Δt, Δx_i / Δt)
+    iszero(Δt) && return (; liq = zero(FT), ice = zero(FT))
+    (; Δx_l, Δx_i) = evolve(scheme, k, Δt, NoRecorder())
+    return (; liq = Δx_l / Δt, ice = Δx_i / Δt)
 end
 
 tendencies(scheme::FrozenCoefficientScheme, problem::MM2015Problem{FT}, Δt::FT) where {FT} =
     tendencies(scheme, coefficients(problem), Δt)
 
 function tendencies(scheme::MM2015, problem::MM2015Problem{FT}, Δt::FT) where {FT}
-    iszero(Δt) && return (zero(FT), zero(FT))
-    Δx_l, Δx_i = evolve(scheme, problem, Δt, NoRecorder())
-    return (Δx_l / Δt, Δx_i / Δt)
+    iszero(Δt) && return (; liq = zero(FT), ice = zero(FT))
+    (; Δx_l, Δx_i) = evolve(scheme, problem, Δt, NoRecorder())
+    return (; liq = Δx_l / Δt, ice = Δx_i / Δt)
 end
 
 """
@@ -30,9 +30,9 @@ between events of a frozen-coefficient scheme, the integrator steps of [`MM2015`
 """
 function trajectory(scheme::FrozenCoefficientScheme, k::Coefficients{FT}, Δt::FT) where {FT}
     recorder = SegmentRecorder{FT}()
-    iszero(Δt) && return Trajectory(scheme, k, Δt, recorder.segments, (zero(FT), zero(FT)))
-    Δx_l, Δx_i = evolve(scheme, k, Δt, recorder)
-    return Trajectory(scheme, k, Δt, recorder.segments, (Δx_l / Δt, Δx_i / Δt))
+    iszero(Δt) && return Trajectory(scheme, k, Δt, recorder.segments, (; liq = zero(FT), ice = zero(FT)))
+    (; Δx_l, Δx_i) = evolve(scheme, k, Δt, recorder)
+    return Trajectory(scheme, k, Δt, recorder.segments, (; liq = Δx_l / Δt, ice = Δx_i / Δt))
 end
 
 trajectory(scheme::FrozenCoefficientScheme, problem::MM2015Problem{FT}, Δt::FT) where {FT} =
@@ -40,9 +40,9 @@ trajectory(scheme::FrozenCoefficientScheme, problem::MM2015Problem{FT}, Δt::FT)
 
 function trajectory(scheme::MM2015, problem::MM2015Problem{FT}, Δt::FT) where {FT}
     recorder = SegmentRecorder{FT}()
-    iszero(Δt) && return Trajectory(scheme, problem, Δt, recorder.segments, (zero(FT), zero(FT)))
-    Δx_l, Δx_i = evolve(scheme, problem, Δt, recorder)
-    return Trajectory(scheme, problem, Δt, recorder.segments, (Δx_l / Δt, Δx_i / Δt))
+    iszero(Δt) && return Trajectory(scheme, problem, Δt, recorder.segments, (; liq = zero(FT), ice = zero(FT)))
+    (; Δx_l, Δx_i) = evolve(scheme, problem, Δt, recorder)
+    return Trajectory(scheme, problem, Δt, recorder.segments, (; liq = Δx_l / Δt, ice = Δx_i / Δt))
 end
 
 """
